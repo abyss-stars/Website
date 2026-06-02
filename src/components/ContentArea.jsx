@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getAllPosts } from '../utils/storage';
+import { getAllPosts, processScheduledPosts } from '../utils/storage';
 import CarouselBanner from './CarouselBanner';
 import PostItem from './PostItem';
 
@@ -15,6 +15,7 @@ export default function ContentArea({ activeTab }) {
   const sentinelRef = useRef(null);
 
   const loadPosts = useCallback(() => {
+    processScheduledPosts();
     let all = getAllPosts();
     all.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
