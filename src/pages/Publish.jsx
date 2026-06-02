@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, saveDraft, getUserDrafts, deleteDraft } from '../utils/storage';
+import { createPost, saveDraft, getUserDrafts, deleteDraft, schedulePost } from '../utils/storage';
 import { IconSearch } from '../components/icons';
 
 // ====================== 工具栏图标 ======================
@@ -101,6 +101,7 @@ export default function Publish() {
   const [isOriginal, setIsOriginal] = useState(false);
   const [isAI, setIsAI] = useState(false);
   const [scheduled, setScheduled] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState('');
   const [showDrafts, setShowDrafts] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
 
@@ -206,7 +207,32 @@ export default function Publish() {
     const content = getContent();
     if (!content) { alert('请输入正文内容'); return; }
 
-    const post = createPost({
+    if (scheduled) {
+      if (!scheduledTime) { alert('请选择定时发布时间'); return; }
+      const now = new Date();
+      const minTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      const maxTime = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+      const selected = new Date(scheduledTime);
+      if (selected < minTime) { alert('定时发布时间需在当前时间 + 2 小时之后'); return; }
+      if (selected > maxTime) { alert('定时发布时间需在当前时间 + 15 天之内'); return; }
+      schedulePost({
+        authorId: currentUser.id,
+        authorName: currentUser.nickname,
+        authorAvatar: currentUser.avatar,
+        content: title.trim() + '\n' + content,
+        image: true,
+        imageBg: 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
+        tags: selectedTopics,
+        game: category,
+        type: 'post',
+        scheduledAt: selected.toISOString(),
+      });
+      alert('定时发布已设置');
+      navigate('/');
+      return;
+    }
+
+    createPost({
       authorId: currentUser.id,
       authorName: currentUser.nickname,
       authorAvatar: currentUser.avatar,
@@ -229,6 +255,7 @@ export default function Publish() {
       isOriginal,
       isAI,
       scheduled,
+      scheduledTime,
     });
     setSavedMsg('草稿已保存');
     setTimeout(() => setSavedMsg(''), 2000);
@@ -242,6 +269,7 @@ export default function Publish() {
     setIsOriginal(draft.isOriginal || false);
     setIsAI(draft.isAI || false);
     setScheduled(draft.scheduled || false);
+    setScheduledTime(draft.scheduledTime || '');
     if (editorRef.current && draft.contentHTML) {
       editorRef.current.innerHTML = draft.contentHTML;
     }
@@ -437,11 +465,24 @@ export default function Publish() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">定时发布</label>
                 <p className="text-[#999] text-xs">(当前+2小时 ≤ 可选时间 ≤ 当前+15天)</p>
               </div>
-              <button onClick={() => setScheduled(!scheduled)}
+              <button onClick={() => { setScheduled(!scheduled); setScheduledTime(''); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${scheduled ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${scheduled ? 'translate-x-5' : ''}`} />
               </button>
             </div>
+            {scheduled && (
+              <div className="flex items-center justify-between">
+                <label className="text-gray-700 dark:text-[#CCC] text-sm">发布时间</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  min={new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                  max={new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                  className="bg-gray-100 dark:bg-[#333] text-gray-700 dark:text-[#CCC] text-sm px-3 py-2 rounded-lg border border-transparent focus:border-[#4CAF50] outline-none transition-colors"
+                />
+              </div>
+            )}
           </div>
 
           {/* 发布按钮 */}

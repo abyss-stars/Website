@@ -372,6 +372,51 @@ function deleteDraft(userId, draftId) {
   setItem(`drafts_${userId}`, drafts);
 }
 
+// ====================== 定时发布管理 ======================
+function getScheduledPosts() {
+  return getItem('scheduled_posts') || [];
+}
+
+function saveScheduledPosts(items) {
+  setItem('scheduled_posts', items);
+}
+
+function schedulePost(postData) {
+  const items = getScheduledPosts();
+  items.push({
+    id: uuid(),
+    ...postData,
+  });
+  saveScheduledPosts(items);
+  return items[items.length - 1];
+}
+
+function processScheduledPosts() {
+  const now = new Date().toISOString();
+  const items = getScheduledPosts();
+  const remaining = [];
+  let published = 0;
+  items.forEach(s => {
+    if (s.scheduledAt <= now) {
+      createPost({
+        authorId: s.authorId,
+        authorName: s.authorName,
+        authorAvatar: s.authorAvatar,
+        content: s.content,
+        image: s.image,
+        imageBg: s.imageBg,
+        tags: s.tags,
+        game: s.game,
+        type: s.type,
+      });
+      published++;
+    } else {
+      remaining.push(s);
+    }
+  });
+  if (published > 0) saveScheduledPosts(remaining);
+}
+
 // ====================== 收藏管理 ======================
 function getUserFavorites(userId) {
   return getItem(`favorites_${userId}`) || { operators: [] };
@@ -527,6 +572,10 @@ export {
   getUserDrafts,
   saveDraft,
   deleteDraft,
+  // 定时发布
+  getScheduledPosts,
+  schedulePost,
+  processScheduledPosts,
   // 收藏
   getUserFavorites,
   toggleFavorite,

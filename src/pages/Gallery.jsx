@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, saveDraft, getUserDrafts, deleteDraft, getUsers } from '../utils/storage';
+import { createPost, saveDraft, getUserDrafts, deleteDraft, getUsers, schedulePost } from '../utils/storage';
 import { IconSearch } from '../components/icons';
 
 // ====================== 工具栏图标 ======================
@@ -55,6 +55,7 @@ export default function Gallery() {
   const [isOriginal, setIsOriginal] = useState(false);
   const [isAI, setIsAI] = useState(false);
   const [scheduled, setScheduled] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
   const [showDrafts, setShowDrafts] = useState(false);
 
@@ -189,9 +190,9 @@ export default function Gallery() {
     if (!category) { alert('请选择分区'); return; }
     if (images.length === 0) { alert('请至少上传一张图片'); return; }
     const content = getContent();
-
     const mentions = extractMentions();
-    const post = createPost({
+
+    const postData = {
       authorId: currentUser.id,
       authorName: currentUser.nickname,
       authorAvatar: currentUser.avatar,
@@ -201,11 +202,28 @@ export default function Gallery() {
       tags: selectedTopics,
       game: category,
       type: 'gallery',
-    });
+    };
 
-    // 存储 @提及通知
+    if (scheduled) {
+      if (!scheduledTime) { alert('请选择定时发布时间'); return; }
+      const now = new Date();
+      const minTime = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      const maxTime = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+      const selected = new Date(scheduledTime);
+      if (selected < minTime) { alert('定时发布时间需在当前时间 + 2 小时之后'); return; }
+      if (selected > maxTime) { alert('定时发布时间需在当前时间 + 15 天之内'); return; }
+      const scheduledPost = schedulePost({
+        ...postData,
+        scheduledAt: selected.toISOString(),
+      });
+      mentions.forEach(username => addMentionNotification(username, scheduledPost.id));
+      alert('定时发布已设置');
+      navigate('/');
+      return;
+    }
+
+    const post = createPost(postData);
     mentions.forEach(username => addMentionNotification(username, post.id));
-
     navigate('/');
   };
 
@@ -216,7 +234,7 @@ export default function Gallery() {
       title, category, topics: selectedTopics,
       images,
       contentHTML: editorRef.current?.innerHTML || '',
-      isOriginal, isAI, scheduled,
+      isOriginal, isAI, scheduled, scheduledTime,
     });
     setSavedMsg('草稿已保存');
     setTimeout(() => setSavedMsg(''), 2000);
@@ -230,6 +248,7 @@ export default function Gallery() {
     setIsOriginal(draft.isOriginal || false);
     setIsAI(draft.isAI || false);
     setScheduled(draft.scheduled || false);
+    setScheduledTime(draft.scheduledTime || '');
     if (editorRef.current && draft.contentHTML) editorRef.current.innerHTML = draft.contentHTML;
     setShowDrafts(false);
   };
@@ -465,11 +484,24 @@ export default function Gallery() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">定时发布</label>
                 <p className="text-[#999] text-xs">(当前+2小时 ≤ 可选时间 ≤ 当前+15天)</p>
               </div>
-              <button onClick={() => setScheduled(!scheduled)}
+              <button onClick={() => { setScheduled(!scheduled); setScheduledTime(''); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${scheduled ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${scheduled ? 'translate-x-5' : ''}`} />
               </button>
             </div>
+            {scheduled && (
+              <div className="flex items-center justify-between">
+                <label className="text-gray-700 dark:text-[#CCC] text-sm">发布时间</label>
+                <input
+                  type="datetime-local"
+                  value={scheduledTime}
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  min={new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                  max={new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16)}
+                  className="bg-gray-100 dark:bg-[#333] text-gray-700 dark:text-[#CCC] text-sm px-3 py-2 rounded-lg border border-transparent focus:border-[#4CAF50] outline-none transition-colors"
+                />
+              </div>
+            )}
           </div>
 
           {/* 发布按钮 */}
