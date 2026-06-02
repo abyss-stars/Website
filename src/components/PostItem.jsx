@@ -1,9 +1,69 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { toggleLike, isLikedByUser, addComment, getPostComments, toggleFollow, isFollowing, getPostById } from '../utils/storage';
 import { IconHeart, IconMessageCircle, IconShare } from './icons';
 import LoginPrompt from './LoginPrompt';
+
+// ====================== 图集轮播组件 ======================
+function GalleryImageCarousel({ images, inArticle }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+
+  useEffect(() => {
+    setCurrentIdx(0);
+  }, [images]);
+
+  const goPrev = (e) => {
+    e.stopPropagation();
+    setCurrentIdx(prev => prev > 0 ? prev - 1 : images.length - 1);
+  };
+
+  const goNext = (e) => {
+    e.stopPropagation();
+    setCurrentIdx(prev => prev < images.length - 1 ? prev + 1 : 0);
+  };
+
+  const selectIdx = (e, i) => {
+    e.stopPropagation();
+    setCurrentIdx(i);
+  };
+
+  if (!images || images.length === 0) return null;
+
+  return (
+    <div className={`rounded-lg overflow-hidden relative bg-gray-100 dark:bg-[#1a1a1a] flex items-center justify-center ${inArticle ? 'w-full' : 'mb-4'}`}
+      style={inArticle ? { maxHeight: '600px' } : { minHeight: '200px' }}>
+      <img
+        src={images[currentIdx]}
+        alt=""
+        className="w-full h-full object-contain"
+        style={inArticle ? { maxHeight: '600px' } : { maxHeight: '500px' }}
+      />
+
+      {images.length > 1 && (
+        <>
+          <button onClick={goPrev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center transition-colors z-10">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+          <button onClick={goNext}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 rounded-full flex items-center justify-center transition-colors z-10">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {images.map((_, i) => (
+              <button key={i} onClick={(e) => selectIdx(e, i)}
+                className={`w-2 h-2 rounded-full transition-colors ${i === currentIdx ? 'bg-white' : 'bg-white/50 hover:bg-white/70'}`} />
+            ))}
+          </div>
+          <span className="absolute top-3 right-3 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full z-10">
+            {currentIdx + 1}/{images.length}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function PostItem({ post, onUpdate }) {
   const { currentUser, isLoggedIn, refreshUser } = useAuth();
@@ -21,6 +81,7 @@ export default function PostItem({ post, onUpdate }) {
   const [postComments, setPostComments] = useState([]);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments || 0);
+  const videoRef = useRef(null);
 
   const handleLike = useCallback(() => {
     if (!isLoggedIn) {
@@ -87,7 +148,9 @@ export default function PostItem({ post, onUpdate }) {
     <>
       {showLoginPrompt && <LoginPrompt onClose={() => setShowLoginPrompt(false)} />}
 
-      <article className="bg-white dark:bg-[#252525] rounded-xl p-4 md:p-5 mb-6 transition-shadow duration-300 hover:shadow-lg dark:hover:shadow-black/20">
+      <article
+        onClick={(e) => { if (!e.target.closest('button')) navigate(`/post/${post.id}`); }}
+        className="bg-white dark:bg-[#252525] rounded-xl p-4 md:p-5 mb-6 transition-shadow duration-300 hover:shadow-lg dark:hover:shadow-black/20 cursor-pointer">
         {/* Header */}
         <div className="flex items-center gap-3 mb-4">
           <img
@@ -120,21 +183,48 @@ export default function PostItem({ post, onUpdate }) {
           )}
         </div>
 
-        {/* Image placeholder */}
-        {post.image && (
-          <div className="mb-4 rounded-lg overflow-hidden" style={{ background: post.imageBg, aspectRatio: '16/9', maxHeight: '400px' }}>
-            <div className="w-full h-full flex items-center justify-center">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <polyline points="21 15 16 10 5 21" />
-              </svg>
-            </div>
+        {/* 图片/视频区域 */}
+        {post.images && post.images.length > 0 ? (
+          <GalleryImageCarousel images={post.images} />
+        ) : post.videoUrl ? (
+          <div
+            className="mb-4 rounded-lg overflow-hidden bg-black"
+            style={{ aspectRatio: '16/9', maxHeight: '400px' }}
+            onMouseEnter={() => { const v = videoRef.current; if (v) { v.muted = true; v.play().catch(() => {}); } }}
+            onMouseLeave={() => { const v = videoRef.current; if (v) { v.pause(); v.currentTime = 0; } }}
+          >
+            <video ref={videoRef} src={post.videoUrl} className="w-full h-full object-contain" muted playsInline preload="metadata" loop />
+          </div>
+        ) : post.image && (
+          <div
+            className="mb-4 rounded-lg overflow-hidden"
+            style={{
+              background: post.imageBg,
+              aspectRatio: '16/9',
+              maxHeight: '400px',
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            }}
+          >
+            {(!post.imageBg || post.imageBg.includes('linear-gradient')) && (
+              <div className="w-full h-full flex items-center justify-center">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </div>
+            )}
           </div>
         )}
 
         {/* Content */}
-        <p className="text-gray-800 dark:text-white text-sm leading-relaxed mb-4 line-clamp-3">{post.content}</p>
+        <div className="mb-4">
+          <p className="text-gray-800 dark:text-white text-lg font-bold leading-relaxed">{post.content.split('\n')[0]}</p>
+          {post.content.split('\n').length > 1 && (
+            <p className="text-gray-800 dark:text-white text-sm leading-relaxed mt-1 line-clamp-2">{post.content.split('\n').slice(1).join('\n')}</p>
+          )}
+        </div>
 
         {/* Footer */}
         <div className="flex items-center justify-between">

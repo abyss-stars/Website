@@ -340,13 +340,6 @@ export default function NavBar({ onMenuClick }) {
                   <IconUser size={16} /> 个人中心
                 </Link>
                 <Link
-                  to="/profile?tab=posts"
-                  onClick={() => setUserMenuOpen(false)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-[#374151] transition-colors"
-                >
-                  <IconSettings size={16} /> 我的帖子
-                </Link>
-                <Link
                   to="/publish-manager"
                   onClick={() => setUserMenuOpen(false)}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-white hover:bg-[#374151] transition-colors"

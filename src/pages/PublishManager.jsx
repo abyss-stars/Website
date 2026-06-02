@@ -41,14 +41,18 @@ function ContentCard({ item, onEdit, onDelete, showDraftLabel }) {
     <div className="flex items-center gap-4 p-4 bg-white dark:bg-[#252525] rounded-lg border border-[#E5E0D5] dark:border-[#333] hover:border-[#4CAF50] transition-colors">
       {/* 缩略图 */}
       <div className="shrink-0 w-[100px] h-[65px] rounded-md overflow-hidden bg-gray-200 dark:bg-[#333] flex items-center justify-center"
-        style={item.imageBg ? { background: item.imageBg } : undefined}>
-        {item.imageBg ? null : (
+        style={item.imageBg && !item.imageBg.includes('linear-gradient') ? { background: item.imageBg, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+        {item.images && item.images.length > 0 ? (
+          <img src={item.images[0]} alt="" className="w-full h-full object-cover" />
+        ) : item.videoUrl ? (
+          <video src={item.videoUrl} className="w-full h-full object-cover" />
+        ) : (!item.imageBg || item.imageBg.includes('linear-gradient')) ? (
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(153,153,153,0.5)" strokeWidth="1">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
             <circle cx="8.5" cy="8.5" r="1.5" />
             <polyline points="21 15 16 10 5 21" />
           </svg>
-        )}
+        ) : null}
       </div>
 
       {/* 信息区 */}
@@ -93,6 +97,43 @@ function ContentCard({ item, onEdit, onDelete, showDraftLabel }) {
   );
 }
 
+// ====================== 确认弹窗 ======================
+function ConfirmModal({ onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* 半透明黑色遮罩 */}
+      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      {/* 弹窗主体 */}
+      <div className="relative bg-white dark:bg-[#2a2a2a] rounded-xl w-[420px] max-w-[90vw] shadow-2xl">
+        {/* 顶部栏 */}
+        <div className="flex items-center justify-between px-6 pt-5 pb-3">
+          <h3 className="text-gray-800 dark:text-[#DDD] text-base font-bold flex-1 text-center">温馨提示</h3>
+          <button onClick={onCancel} className="absolute right-4 top-4 w-6 h-6 flex items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-[#444] transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        {/* 中间内容区 */}
+        <div className="px-6 pb-6">
+          <p className="text-[#666] dark:text-[#AAA] text-sm text-center">是否确认移除此作品</p>
+        </div>
+        {/* 底部操作区 */}
+        <div className="flex gap-3 px-6 pb-5">
+          <button onClick={onCancel}
+            className="flex-1 py-2.5 text-sm font-medium text-gray-700 dark:text-[#CCC] bg-gray-100 dark:bg-[#3a3a3a] rounded-full hover:bg-gray-200 dark:hover:bg-[#4a4a4a] transition-colors">
+            取消
+          </button>
+          <button onClick={onConfirm}
+            className="flex-1 py-2.5 text-sm font-medium text-white bg-[#8B9A46] rounded-full hover:bg-[#7a8938] transition-colors">
+            确认
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ====================== 空白状态 ======================
 function EmptyState() {
   return (
@@ -120,6 +161,7 @@ export default function PublishManager() {
   const [activeMenu, setActiveMenu] = useState('post');
   const [activeTab, setActiveTab] = useState('published');
   const [refresh, setRefresh] = useState(0);
+  const [confirmTarget, setConfirmTarget] = useState(null);
 
   useEffect(() => { if (!isLoggedIn) navigate('/login'); }, [isLoggedIn, navigate]);
 
@@ -134,16 +176,23 @@ export default function PublishManager() {
       navigate(`/publish?edit=${item.id}`);
     } else if (activeMenu === 'gallery') {
       navigate(`/gallery?edit=${item.id}`);
+    } else if (activeMenu === 'video') {
+      navigate(`/video?edit=${item.id}`);
     }
   };
 
   const handleDelete = (item) => {
-    if (!window.confirm('确定要删除吗？')) return;
+    setConfirmTarget(item);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!confirmTarget) return;
     if (activeTab === 'draft') {
-      deleteDraft(currentUser.id, item.id);
+      deleteDraft(currentUser.id, confirmTarget.id);
     } else {
-      deletePost(item.id);
+      deletePost(confirmTarget.id);
     }
+    setConfirmTarget(null);
     setRefresh(c => c + 1);
   };
 
@@ -226,6 +275,14 @@ export default function PublishManager() {
           </div>
         </div>
       </div>
+
+      {/* 删除确认弹窗 */}
+      {confirmTarget && (
+        <ConfirmModal
+          onConfirm={handleConfirmDelete}
+          onCancel={() => setConfirmTarget(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, saveDraft, getUserDrafts, deleteDraft, schedulePost } from '../utils/storage';
+import { createPost, saveDraft, getUserDrafts, deleteDraft, schedulePost, getPostById, updatePost, getAllPosts } from '../utils/storage';
+import { uploadFile, generateFilename } from '../utils/upload';
 import { IconSearch } from '../components/icons';
 
 // ====================== 工具栏图标 ======================
@@ -88,7 +89,7 @@ const TOPICS = ['#明日方舟', '#泡姆泡姆', '#终末地', '#来自星尘',
 export default function Publish() {
   const { currentUser, isLoggedIn } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const location = useLocation();
 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -97,6 +98,7 @@ export default function Publish() {
   const [category, setCategory] = useState('');
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [topicSearch, setTopicSearch] = useState('');
+  const [showTopicDropdown, setShowTopicDropdown] = useState(false);
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [isOriginal, setIsOriginal] = useState(false);
   const [isAI, setIsAI] = useState(false);
@@ -104,11 +106,37 @@ export default function Publish() {
   const [scheduledTime, setScheduledTime] = useState('');
   const [showDrafts, setShowDrafts] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const [editingPostId, setEditingPostId] = useState(null);
 
   // 路由守卫
   useEffect(() => {
     if (!isLoggedIn) { navigate('/login'); }
   }, [isLoggedIn, navigate]);
+
+  // 编辑模式：加载已有帖子
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    if (!editId || !isLoggedIn) return;
+    const post = getPostById(editId);
+    if (!post || post.authorId !== currentUser.id) { navigate('/'); return; }
+    setEditingPostId(post.id);
+
+    // 解析 content：第一行为标题，其余为正文
+    const lines = (post.content || '').split('\n');
+    setTitle(lines[0] || '');
+    const body = lines.slice(1).join('\n');
+
+    setCategory(post.game || '');
+    setSelectedTopics(post.tags || []);
+
+    // 填充编辑器内容
+    setTimeout(() => {
+      if (editorRef.current) {
+        editorRef.current.innerText = body;
+      }
+    }, 0);
+  }, [location.search, isLoggedIn, currentUser, navigate]);
 
   // 草稿
   const drafts = isLoggedIn ? getUserDrafts(currentUser.id) : [];
@@ -201,11 +229,48 @@ export default function Publish() {
   };
 
   // 发表
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!title.trim()) { alert('请输入标题'); return; }
     if (!category) { alert('请选择分区'); return; }
     const content = getContent();
     if (!content) { alert('请输入正文内容'); return; }
+
+    // 提取编辑器中的图片并上传
+    const editorEl = editorRef.current;
+    const imgElements = editorEl ? editorEl.querySelectorAll('img') : [];
+    const uploadedPaths = [];
+    for (const img of imgElements) {
+      const src = img.getAttribute('src') || '';
+      if (src.startsWith('data:image/')) {
+        const ext = src.includes('image/png') ? 'png' : src.includes('image/gif') ? 'gif' : 'jpg';
+        const filename = generateFilename('inline', ext);
+        const path = await uploadFile(currentUser.username, 'pic', src, filename);
+        if (path) {
+          uploadedPaths.push(path);
+          img.setAttribute('src', path);
+        } else {
+          uploadedPaths.push(src);
+        }
+      } else if (src && !src.startsWith('data:')) {
+        uploadedPaths.push(src);
+      }
+    }
+
+    const postData = {
+      content: title.trim() + '\n' + content,
+      image: uploadedPaths.length > 0,
+      imageBg: uploadedPaths.length > 0 ? `url(${uploadedPaths[0]}) center/cover` : 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
+      images: uploadedPaths,
+      tags: selectedTopics,
+      game: category,
+    };
+
+    // 编辑模式：直接更新已有帖子
+    if (editingPostId) {
+      updatePost(editingPostId, postData);
+      navigate('/');
+      return;
+    }
 
     if (scheduled) {
       if (!scheduledTime) { alert('请选择定时发布时间'); return; }
@@ -216,14 +281,10 @@ export default function Publish() {
       if (selected < minTime) { alert('定时发布时间需在当前时间 + 2 小时之后'); return; }
       if (selected > maxTime) { alert('定时发布时间需在当前时间 + 15 天之内'); return; }
       schedulePost({
+        ...postData,
         authorId: currentUser.id,
         authorName: currentUser.nickname,
         authorAvatar: currentUser.avatar,
-        content: title.trim() + '\n' + content,
-        image: true,
-        imageBg: 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
-        tags: selectedTopics,
-        game: category,
         type: 'post',
         scheduledAt: selected.toISOString(),
       });
@@ -233,14 +294,10 @@ export default function Publish() {
     }
 
     createPost({
+      ...postData,
       authorId: currentUser.id,
       authorName: currentUser.nickname,
       authorAvatar: currentUser.avatar,
-      content: title.trim() + '\n' + content,
-      image: true,
-      imageBg: 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
-      tags: selectedTopics,
-      game: category,
     });
     navigate('/');
   };
@@ -285,6 +342,18 @@ export default function Publish() {
     t.toLowerCase().includes(topicSearch.toLowerCase()) && !selectedTopics.includes(t)
   );
 
+  // 最近点赞量前3高的帖子的标签作为推荐话题
+  const trendingTopics = (() => {
+    const posts = getAllPosts();
+    const sorted = [...posts].sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    const top3 = sorted.slice(0, 3);
+    const tags = new Set();
+    top3.forEach(p => (p.tags || []).forEach(t => tags.add(t)));
+    return [...tags].filter(t => !selectedTopics.includes(t) && !TOPICS.includes(t));
+  })();
+
+  const dropdownItems = topicSearch ? filteredTopics : trendingTopics;
+
   if (!isLoggedIn) return null;
 
   const charCount = getCharCount();
@@ -298,7 +367,7 @@ export default function Publish() {
 
           {/* 标题栏 */}
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-gray-900 dark:text-white text-xl font-bold">发布图文</h1>
+            <h1 className="text-gray-900 dark:text-white text-xl font-bold">{editingPostId ? '编辑图文' : '发布图文'}</h1>
             <div className="flex items-center gap-3">
               {savedMsg && <span className="text-[#4CAF50] text-xs">{savedMsg}</span>}
               <button onClick={() => navigate('/publish-manager')}
@@ -418,18 +487,41 @@ export default function Publish() {
                 <input
                   type="text"
                   value={topicSearch}
-                  onChange={(e) => setTopicSearch(e.target.value)}
+                  onChange={(e) => { setTopicSearch(e.target.value); setShowTopicDropdown(true); }}
+                  onFocus={() => setShowTopicDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowTopicDropdown(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && topicSearch.trim()) {
+                      e.preventDefault();
+                      const t = topicSearch.trim();
+                      if (!selectedTopics.includes(t)) {
+                        setSelectedTopics(prev => [...prev, t]);
+                      }
+                      setTopicSearch('');
+                      setShowTopicDropdown(false);
+                    }
+                  }}
                   placeholder="搜索话题"
                   className="w-full bg-gray-100 dark:bg-[#333] text-gray-700 dark:text-[#CCC] text-sm pl-8 pr-3 py-2 rounded-lg outline-none border border-transparent focus:border-[#4CAF50] transition-colors"
                 />
-                {topicSearch && filteredTopics.length > 0 && (
+                {showTopicDropdown && (
                   <div className="absolute top-full mt-1 left-0 w-full bg-white dark:bg-[#2a2a2a] border border-[#E5E0D5] dark:border-[#374151] rounded-lg shadow-lg py-1 z-20 max-h-40 overflow-y-auto">
-                    {filteredTopics.map(t => (
-                      <button key={t} onClick={() => { setSelectedTopics(prev => [...prev, t]); setTopicSearch(''); }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-[#CCC] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors">
-                        {t}
+                    {topicSearch && !selectedTopics.includes(topicSearch.trim()) && (
+                      <button onClick={() => { setSelectedTopics(prev => [...prev, topicSearch.trim()]); setTopicSearch(''); setShowTopicDropdown(false); }}
+                        className="w-full text-left px-3 py-2 text-sm text-[#4CAF50] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors border-b border-[#E5E0D5] dark:border-[#374151]">
+                        添加 "{topicSearch.trim()}"
                       </button>
-                    ))}
+                    )}
+                    {dropdownItems.length > 0 ? (
+                      dropdownItems.map(t => (
+                        <button key={t} onClick={() => { setSelectedTopics(prev => [...prev, t]); setTopicSearch(''); setShowTopicDropdown(false); }}
+                          className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-[#CCC] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors">
+                          {t}
+                        </button>
+                      ))
+                    ) : (
+                      !topicSearch && <div className="px-3 py-2 text-sm text-[#999]">无</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -441,7 +533,7 @@ export default function Publish() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">原创内容</label>
                 <p className="text-[#999] text-xs">声明该内容为本人原创</p>
               </div>
-              <button onClick={() => setIsOriginal(!isOriginal)}
+              <button onClick={() => { setIsOriginal(!isOriginal); if (!isOriginal) setIsAI(false); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${isOriginal ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isOriginal ? 'translate-x-5' : ''}`} />
               </button>
@@ -453,7 +545,7 @@ export default function Publish() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">AI生成内容</label>
                 <p className="text-[#999] text-xs">声明该内容含AI生成部分</p>
               </div>
-              <button onClick={() => setIsAI(!isAI)}
+              <button onClick={() => { setIsAI(!isAI); if (!isAI) setIsOriginal(false); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${isAI ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isAI ? 'translate-x-5' : ''}`} />
               </button>
@@ -489,7 +581,7 @@ export default function Publish() {
           <div className="mt-6 pt-4 border-t border-[#E5E0D5] dark:border-[#333]">
             <button onClick={handlePublish}
               className="px-10 py-2.5 bg-[#4CAF50] text-white font-medium rounded-lg hover:bg-[#388E3C] transition-colors">
-              发布
+              {editingPostId ? '保存修改' : '发布'}
             </button>
           </div>
         </div>

@@ -146,7 +146,7 @@ function getPostById(postId) {
   return getAllPosts().find(p => p.id === postId) || null;
 }
 
-function createPost({ authorId, authorName, authorAvatar, content, image, imageBg, tags, game, type }) {
+function createPost({ authorId, authorName, authorAvatar, content, image, imageBg, tags, game, type, images, videoUrl }) {
   const post = {
     id: uuid(),
     authorId,
@@ -155,6 +155,8 @@ function createPost({ authorId, authorName, authorAvatar, content, image, imageB
     content,
     image: image || null,
     imageBg: imageBg || null,
+    images: images || [],
+    videoUrl: videoUrl || null,
     tags: tags || [],
     game: game || '明日方舟',
     type: type || 'post',
@@ -184,6 +186,15 @@ function deletePost(postId) {
   const comments = getAllComments();
   delete comments[postId];
   setItem(STORAGE_KEYS.ALL_COMMENTS, comments);
+}
+
+function updatePost(postId, updates) {
+  const posts = getAllPosts();
+  const idx = posts.findIndex(p => p.id === postId);
+  if (idx === -1) return null;
+  posts[idx] = { ...posts[idx], ...updates };
+  saveAllPosts(posts);
+  return posts[idx];
 }
 
 function getUserPosts(userId) {
@@ -254,13 +265,15 @@ function getPostComments(postId) {
   return all[postId] || [];
 }
 
-function addComment({ postId, authorId, authorName, authorAvatar, content }) {
+function addComment({ postId, authorId, authorName, authorAvatar, content, parentId }) {
   const comment = {
     id: uuid(),
     authorId,
     authorName,
     authorAvatar,
     content,
+    parentId: parentId || null,
+    likes: 0,
     time: new Date().toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }),
     createdAt: new Date().toISOString(),
   };
@@ -277,6 +290,48 @@ function addComment({ postId, authorId, authorName, authorAvatar, content }) {
     saveAllPosts(posts);
   }
   return comment;
+}
+
+function saveAllComments(comments) {
+  setItem(STORAGE_KEYS.ALL_COMMENTS, comments);
+}
+
+// ====================== 评论点赞 ======================
+function getUserCommentLikes(userId) {
+  return getItem(`comment_likes_${userId}`) || [];
+}
+
+function toggleCommentLike(userId, commentId, postId) {
+  const likes = getUserCommentLikes(userId);
+  const idx = likes.indexOf(commentId);
+  let liked;
+  if (idx >= 0) {
+    likes.splice(idx, 1);
+    liked = false;
+  } else {
+    likes.push(commentId);
+    liked = true;
+  }
+  setItem(`comment_likes_${userId}`, likes);
+  // 更新评论的赞数
+  const all = getAllComments();
+  const comments = all[postId] || [];
+  const target = comments.find(c => c.id === commentId);
+  if (target) {
+    let count = 0;
+    const users = getUsers();
+    users.forEach(u => {
+      const cl = getUserCommentLikes(u.id);
+      if (cl.includes(commentId)) count++;
+    });
+    target.likes = count;
+    setItem(STORAGE_KEYS.ALL_COMMENTS, all);
+  }
+  return liked;
+}
+
+function isCommentLikedByUser(userId, commentId) {
+  return getUserCommentLikes(userId).includes(commentId);
 }
 
 // ====================== 关注管理 ======================
@@ -405,6 +460,8 @@ function processScheduledPosts() {
         content: s.content,
         image: s.image,
         imageBg: s.imageBg,
+        images: s.images || [],
+        videoUrl: s.videoUrl || null,
         tags: s.tags,
         game: s.game,
         type: s.type,
@@ -430,6 +487,15 @@ function toggleFavorite(userId, type, itemId) {
   else favs[type].push(itemId);
   setItem(`favorites_${userId}`, favs);
   return idx < 0;
+}
+
+function getUserFavoritePostIds(userId) {
+  const favs = getUserFavorites(userId);
+  return favs.posts || [];
+}
+
+function isPostFavoritedByUser(userId, postId) {
+  return getUserFavoritePostIds(userId).includes(postId);
 }
 
 // ====================== 数据初始化 ======================
@@ -551,6 +617,7 @@ export {
   getPostById,
   createPost,
   deletePost,
+  updatePost,
   getUserPosts,
   // 点赞
   getUserLikes,
@@ -562,6 +629,9 @@ export {
   getAllComments,
   getPostComments,
   addComment,
+  // 评论点赞
+  toggleCommentLike,
+  isCommentLikedByUser,
   // 关注
   toggleFollow,
   isFollowing,
@@ -579,6 +649,8 @@ export {
   // 收藏
   getUserFavorites,
   toggleFavorite,
+  getUserFavoritePostIds,
+  isPostFavoritedByUser,
   // 初始化
   initSeedData,
 };

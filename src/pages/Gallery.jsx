@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, saveDraft, getUserDrafts, deleteDraft, getUsers, schedulePost } from '../utils/storage';
+import { createPost, saveDraft, getUserDrafts, deleteDraft, getUsers, schedulePost, getPostById, updatePost, getAllPosts } from '../utils/storage';
+import { uploadFile, generateFilename } from '../utils/upload';
 import { IconSearch } from '../components/icons';
 
 // ====================== 工具栏图标 ======================
@@ -42,6 +43,7 @@ function addMentionNotification(mentionedUsername, postId) {
 export default function Gallery() {
   const { currentUser, isLoggedIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -51,6 +53,7 @@ export default function Gallery() {
   const [category, setCategory] = useState('');
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [topicSearch, setTopicSearch] = useState('');
+  const [showTopicDropdown, setShowTopicDropdown] = useState(false);
   const [selectedTopics, setSelectedTopics] = useState([]);
   const [isOriginal, setIsOriginal] = useState(false);
   const [isAI, setIsAI] = useState(false);
@@ -58,6 +61,7 @@ export default function Gallery() {
   const [scheduledTime, setScheduledTime] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
   const [showDrafts, setShowDrafts] = useState(false);
+  const [editingPostId, setEditingPostId] = useState(null);
 
   // @提及状态
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -65,6 +69,27 @@ export default function Gallery() {
   const [mentionPos, setMentionPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => { if (!isLoggedIn) navigate('/login'); }, [isLoggedIn, navigate]);
+
+  // 编辑模式：加载已有帖子
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    if (!editId || !isLoggedIn) return;
+    const post = getPostById(editId);
+    if (!post || post.authorId !== currentUser.id) { navigate('/'); return; }
+    setEditingPostId(post.id);
+
+    const lines = (post.content || '').split('\n');
+    setTitle(lines[0] || '');
+    const body = lines.slice(1).join('\n');
+    setTimeout(() => {
+      if (editorRef.current) editorRef.current.innerText = body;
+    }, 0);
+
+    setCategory(post.game || '');
+    setSelectedTopics(post.tags || []);
+    setImages(post.images || []);
+  }, [location.search, isLoggedIn, currentUser, navigate]);
 
   const drafts = isLoggedIn ? getUserDrafts(currentUser.id) : [];
   const allUsers = getUsers();
@@ -185,24 +210,41 @@ export default function Gallery() {
   };
 
   // 发表
-  const handlePublish = () => {
+  const handlePublish = async () => {
     if (!title.trim()) { alert('请输入标题'); return; }
     if (!category) { alert('请选择分区'); return; }
     if (images.length === 0) { alert('请至少上传一张图片'); return; }
     const content = getContent();
     const mentions = extractMentions();
 
+    // 上传图片：跳过已是服务器路径的图片
+    const uploadedPaths = [];
+    for (let i = 0; i < images.length; i++) {
+      if (images[i].startsWith('/img/user/')) {
+        uploadedPaths.push(images[i]);
+      } else {
+        const filename = generateFilename('gallery', 'jpg');
+        const path = await uploadFile(currentUser.username, 'pic', images[i], filename);
+        uploadedPaths.push(path || images[i]);
+      }
+    }
+
     const postData = {
-      authorId: currentUser.id,
-      authorName: currentUser.nickname,
-      authorAvatar: currentUser.avatar,
       content: title.trim() + '\n' + content,
       image: true,
-      imageBg: images[0] ? `url(${images[0]}) center/cover` : 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
+      imageBg: uploadedPaths[0] ? `url(${uploadedPaths[0]}) center/cover` : 'linear-gradient(135deg, #2d3a4a, #1a2744, #0f1f3d)',
+      images: uploadedPaths,
       tags: selectedTopics,
       game: category,
       type: 'gallery',
     };
+
+    // 编辑模式
+    if (editingPostId) {
+      updatePost(editingPostId, postData);
+      navigate('/');
+      return;
+    }
 
     if (scheduled) {
       if (!scheduledTime) { alert('请选择定时发布时间'); return; }
@@ -214,6 +256,9 @@ export default function Gallery() {
       if (selected > maxTime) { alert('定时发布时间需在当前时间 + 15 天之内'); return; }
       const scheduledPost = schedulePost({
         ...postData,
+        authorId: currentUser.id,
+        authorName: currentUser.nickname,
+        authorAvatar: currentUser.avatar,
         scheduledAt: selected.toISOString(),
       });
       mentions.forEach(username => addMentionNotification(username, scheduledPost.id));
@@ -222,7 +267,12 @@ export default function Gallery() {
       return;
     }
 
-    const post = createPost(postData);
+    const post = createPost({
+      ...postData,
+      authorId: currentUser.id,
+      authorName: currentUser.nickname,
+      authorAvatar: currentUser.avatar,
+    });
     mentions.forEach(username => addMentionNotification(username, post.id));
     navigate('/');
   };
@@ -257,6 +307,21 @@ export default function Gallery() {
 
   const charCount = getContent().length;
 
+  const filteredTopics = TOPICS.filter(t =>
+    t.toLowerCase().includes(topicSearch.toLowerCase()) && !selectedTopics.includes(t)
+  );
+
+  const trendingTopics = (() => {
+    const posts = getAllPosts();
+    const sorted = [...posts].sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    const top3 = sorted.slice(0, 3);
+    const tags = new Set();
+    top3.forEach(p => (p.tags || []).forEach(t => tags.add(t)));
+    return [...tags].filter(t => !selectedTopics.includes(t) && !TOPICS.includes(t));
+  })();
+
+  const dropdownItems = topicSearch ? filteredTopics : trendingTopics;
+
   return (
     <div className="min-h-screen bg-[#F5F0E6] dark:bg-[#1a1a1a] pt-[91px] pb-12">
       <div className="max-w-[1200px] mx-auto px-4 lg:px-6">
@@ -265,7 +330,7 @@ export default function Gallery() {
 
           {/* 标题栏 */}
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-gray-900 dark:text-white text-xl font-bold">发布图集</h1>
+            <h1 className="text-gray-900 dark:text-white text-xl font-bold">{editingPostId ? '编辑图集' : '发布图集'}</h1>
             <div className="flex items-center gap-3">
               {savedMsg && <span className="text-[#4CAF50] text-xs">{savedMsg}</span>}
               <button onClick={() => navigate('/publish-manager')}
@@ -441,14 +506,39 @@ export default function Gallery() {
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                   <IconSearch size={14} color="#999" />
                 </span>
-                <input type="text" value={topicSearch} onChange={(e) => setTopicSearch(e.target.value)} placeholder="搜索话题"
+                <input type="text" value={topicSearch}
+                  onChange={(e) => { setTopicSearch(e.target.value); setShowTopicDropdown(true); }}
+                  onFocus={() => setShowTopicDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowTopicDropdown(false), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && topicSearch.trim()) {
+                      e.preventDefault();
+                      const t = topicSearch.trim();
+                      if (!selectedTopics.includes(t)) {
+                        setSelectedTopics(prev => [...prev, t]);
+                      }
+                      setTopicSearch('');
+                      setShowTopicDropdown(false);
+                    }
+                  }}
+                  placeholder="搜索话题"
                   className="w-full bg-gray-100 dark:bg-[#333] text-gray-700 dark:text-[#CCC] text-sm pl-8 pr-3 py-2 rounded-lg outline-none border border-transparent focus:border-[#4CAF50] transition-colors" />
-                {topicSearch && TOPICS.filter(t => t.toLowerCase().includes(topicSearch.toLowerCase()) && !selectedTopics.includes(t)).length > 0 && (
+                {showTopicDropdown && (
                   <div className="absolute top-full mt-1 left-0 w-full bg-white dark:bg-[#2a2a2a] border border-[#E5E0D5] dark:border-[#374151] rounded-lg shadow-lg py-1 z-20 max-h-40 overflow-y-auto">
-                    {TOPICS.filter(t => t.toLowerCase().includes(topicSearch.toLowerCase()) && !selectedTopics.includes(t)).map(t => (
-                      <button key={t} onClick={() => { setSelectedTopics(prev => [...prev, t]); setTopicSearch(''); }}
-                        className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-[#CCC] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors">{t}</button>
-                    ))}
+                    {topicSearch && !selectedTopics.includes(topicSearch.trim()) && (
+                      <button onClick={() => { setSelectedTopics(prev => [...prev, topicSearch.trim()]); setTopicSearch(''); setShowTopicDropdown(false); }}
+                        className="w-full text-left px-3 py-2 text-sm text-[#4CAF50] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors border-b border-[#E5E0D5] dark:border-[#374151]">
+                        添加 "{topicSearch.trim()}"
+                      </button>
+                    )}
+                    {dropdownItems.length > 0 ? (
+                      dropdownItems.map(t => (
+                        <button key={t} onClick={() => { setSelectedTopics(prev => [...prev, t]); setTopicSearch(''); setShowTopicDropdown(false); }}
+                          className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-[#CCC] hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors">{t}</button>
+                      ))
+                    ) : (
+                      !topicSearch && <div className="px-3 py-2 text-sm text-[#999]">无</div>
+                    )}
                   </div>
                 )}
               </div>
@@ -460,7 +550,7 @@ export default function Gallery() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">原创内容</label>
                 <p className="text-[#999] text-xs">声明该内容为本人原创</p>
               </div>
-              <button onClick={() => setIsOriginal(!isOriginal)}
+              <button onClick={() => { setIsOriginal(!isOriginal); if (!isOriginal) setIsAI(false); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${isOriginal ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isOriginal ? 'translate-x-5' : ''}`} />
               </button>
@@ -472,7 +562,7 @@ export default function Gallery() {
                 <label className="text-gray-700 dark:text-[#CCC] text-sm">AI生成内容</label>
                 <p className="text-[#999] text-xs">声明该内容含AI生成部分</p>
               </div>
-              <button onClick={() => setIsAI(!isAI)}
+              <button onClick={() => { setIsAI(!isAI); if (!isAI) setIsOriginal(false); }}
                 className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${isAI ? 'bg-[#4CAF50]' : 'bg-gray-300 dark:bg-[#555]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${isAI ? 'translate-x-5' : ''}`} />
               </button>
@@ -508,7 +598,7 @@ export default function Gallery() {
           <div className="mt-6 pt-4 border-t border-[#E5E0D5] dark:border-[#333]">
             <button onClick={handlePublish}
               className="px-10 py-2.5 bg-[#4CAF50] text-white font-medium rounded-lg hover:bg-[#388E3C] transition-colors">
-              发布
+              {editingPostId ? '保存修改' : '发布'}
             </button>
           </div>
         </div>
