@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { findUserById, updateUser, getUserPosts, getUsers } from '../utils/storage';
+import { findUserById, updateUser, getUserPosts, getUsers, getAllPosts, getUserFavoritePostIds } from '../utils/storage';
 import PostItem from '../components/PostItem';
 
 export default function Profile() {
@@ -20,6 +20,7 @@ export default function Profile() {
   const [message, setMessage] = useState('');
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'posts');
   const [userPosts, setUserPosts] = useState([]);
+  const [favoritePosts, setFavoritePosts] = useState([]);
   const [followers, setFollowers] = useState([]);
   const [followings, setFollowings] = useState([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -40,6 +41,10 @@ export default function Profile() {
     const followingList = (user.followings || []).map(id => findUserById(id)).filter(Boolean);
     setFollowers(followerList);
     setFollowings(followingList);
+
+    const favIds = getUserFavoritePostIds(user.id);
+    const allPosts = getAllPosts();
+    setFavoritePosts(allPosts.filter(p => favIds.includes(p.id)));
   }, [user, refreshKey]);
 
   if (!isLoggedIn) return null;
@@ -215,6 +220,7 @@ export default function Profile() {
         <div className="flex gap-0 mb-6 border-b border-[#E5E0D5] dark:border-[#374151]">
           {[
             { key: 'posts', label: '发布的帖子' },
+            ...(isOwnProfile ? [{ key: 'favorites', label: '收藏' }] : []),
             { key: 'followings', label: '关注列表' },
             { key: 'followers', label: '粉丝列表' },
           ].map(({ key, label }) => (
@@ -241,6 +247,20 @@ export default function Profile() {
               </div>
             ) : (
               userPosts.map(post => (
+                <PostItem key={post.id} post={post} onUpdate={handlePostUpdate} />
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === 'favorites' && (
+          <div>
+            {favoritePosts.length === 0 ? (
+              <div className="text-center py-12 text-[#666]">
+                <p>暂无收藏的帖子</p>
+              </div>
+            ) : (
+              favoritePosts.map(post => (
                 <PostItem key={post.id} post={post} onUpdate={handlePostUpdate} />
               ))
             )}

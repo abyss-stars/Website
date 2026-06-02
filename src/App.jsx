@@ -14,6 +14,7 @@ import Publish from './pages/Publish';
 import Gallery from './pages/Gallery';
 import Video from './pages/Video';
 import PublishManager from './pages/PublishManager';
+import Article from './pages/Article';
 
 function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -39,6 +40,7 @@ function AppLayout() {
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/video" element={<Video />} />
         <Route path="/publish-manager" element={<PublishManager />} />
+        <Route path="/post/:postId" element={<Article />} />
       </Routes>
 
       {/* Mobile toolbar trigger FAB */}
