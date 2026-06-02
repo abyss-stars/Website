@@ -53,7 +53,9 @@ export default function RightToolbar({ visible, onClose }) {
       navigate('/?checkin=true');
       return;
     }
-    window.open('https://www.skland.com/download?type=akToolbox', '_blank');
+    if(tool === '活动日历'){
+      navigate('/calendar')
+    }
   };
 
   const tools = [

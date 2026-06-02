@@ -14,6 +14,8 @@ import Publish from './pages/Publish';
 import Gallery from './pages/Gallery';
 import Video from './pages/Video';
 import PublishManager from './pages/PublishManager';
+import EventCalendar from '../../web/src/pages/EventCalendar';
+import CalendarPage from './pages/calendar';
 
 function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -39,6 +41,7 @@ function AppLayout() {
         <Route path="/gallery" element={<Gallery />} />
         <Route path="/video" element={<Video />} />
         <Route path="/publish-manager" element={<PublishManager />} />
+        <Route path="/calendar" element={<CalendarPage />} />
       </Routes>
 
       {/* Mobile toolbar trigger FAB */}
