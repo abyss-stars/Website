@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>森空岛 - 视频中心 (IndexedDB 持久化版)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            green: {
+              50: '#E8F5E9', 100: '#C8E6C9', 200: '#A5D6A7',
+              300: '#81C784', 400: '#66BB6A', 500: '#4CAF50',
+              600: '#43A047', 700: '#388E3C', 800: '#2E7D32', 999: '#1B5E20',
+            },
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #1a1a1a; color: #fff; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+    .video-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000; }
+    .video-container video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 12px; }
+    .drag-active { border-color: #4CAF50 !important; background-color: rgba(76, 175, 80, 0.1) !important; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // ====================== IndexedDB 数据库操作 ======================
+    const DB_NAME = 'KuroVideoDB';
+    const STORE_NAME = 'videos';
+    const DB_VERSION = 1;
+
+    const initDB = () => {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const saveVideoToDB = async (videoData) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put(videoData);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const getVideoFromDB = async (id) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const getAllVideosFromDB = async () => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const deleteVideoFromDB = async (id) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    // ====================== 数据管理 ======================
+    const initVideoData = async () => {
+      const videos = await getAllVideosFromDB();
+      if (videos.length === 0) {
+        const defaultData = [
+          {
+            id: 1,
+            title: '【明日方舟】SideStory 火山旅梦 通关实况',
+            author: '攻略狂人',
+            views: '1.2万',
+            likes: 1560,
+            videoFile: null,
+            comments: [{ author: '博士', text: '这关卡太难了，感谢攻略！' }]
+          },
+          {
+            id: 2,
+            title: '泡姆泡姆 最新联动内容速览',
+            author: '休闲玩家',
+            views: '8,500',
+            likes: 890,
+            videoFile: null,
+            comments: [{ author: '泡泡', text: '新皮肤好可爱！' }]
+          }
+        ];
+        for (const video of defaultData) {
+          await saveVideoToDB(video);
+        }
+      }
+    };
+
+    // ====================== ICONS ======================
+    const IconPlay = ({ size = 24, color = '#FFF' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5,3 19,12 5,21" /></svg>
+    );
+    const IconHeart = ({ size = 20, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+    );
+    const IconMessageCircle = ({ size = 20, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+    );
+    const IconShare = ({ size = 20, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
+    );
+    const IconTrash = ({ size = 16, color = '#ef4444' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+    );
+    const IconUpload = ({ size = 24, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+    );
+    const IconAlertCircle = ({ size = 24, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+    );
+
+    // ====================== COMPONENTS ======================
+    
+    const DragAndDropUpload = ({ onFileUploaded, onCancel }) => {
+      const [isDragging, setIsDragging] = useState(false);
+      const handleDragEnter = (e) => { e.preventDefault(); setIsDragging(true); };
+      const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
+      const handleDragOver = (e) => { e.preventDefault(); };
+      
+      const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          const file = files[0]; // 修复：取第一个文件
+          if (file.type.includes('video')) {
+            onFileUploaded(file);
+          } else {
+            alert('请拖入有效的视频文件！');
+          }
+        }
+      };
+
+      return (
+        <div 
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${isDragging ? 'drag-active border-[#4CAF50]' : 'border-gray-600 bg-[#252525]'}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <IconUpload size={40} color={isDragging ? '#4CAF50' : '#666'} />
+            <p className="text-white font-medium">{isDragging ? '松开鼠标即可上传' : '拖拽视频文件到这里'}</p>
+            <p className="text-xs text-gray-500">建议上传 MP4 (H.264编码) 格式，文件将保存在本地浏览器中</p>
+            <button onClick={onCancel} className="mt-2 text-sm text-gray-400 hover:text-white underline">取消</button>
+          </div>
+        </div>
+      );
+    };
+
+    const VideoListItem = ({ video, onClick, active, isDevMode, onDelete }) => {
+      return (
+        <div className={`flex items-center gap-3 p-3 mb-2 rounded-lg transition-all duration-200 group ${active ? 'bg-[#2E7D32] text-white' : 'bg-[#252525] text-gray-300 hover:text-white'}`}>
+          <div onClick={() => onClick(video)} className="flex items-center gap-3 flex-1 cursor-pointer min-w-0">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${active ? 'bg-white' : 'bg-gray-700'}`}>
+              <IconPlay size={18} color={active ? '#2E7D32' : '#999'} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-medium leading-tight line-clamp-2">{video.title}</h3>
+              <p className="text-xs text-gray-500 mt-1">{video.author}</p>
+            </div>
+          </div>
+          {isDevMode && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); onDelete(video.id); }}
+              className="p-2 hover:bg-gray-700 rounded transition-colors shrink-0"
+              title="从列表中删除"
+            >
+              <IconTrash size={16} color="#ef4444" />
+            </button>
+          )}
+        </div>
+      );
+    };
+
+    const VideoPlayer = ({ currentVideo, onLike, onComment, isDevMode, onUpdateVideo, onDeleteComment, onReupload }) => {
+      const [localVideo, setLocalVideo] = useState(currentVideo);
+      const [inputValue, setInputValue] = useState('');
+      const [videoError, setVideoError] = useState(false);
+      const [videoUrl, setVideoUrl] = useState('');
+      const videoRef = useRef(null);
+      const seekTimeoutRef = useRef(null); // 用于防抖的定时器
+
+      useEffect(() => {
+        setLocalVideo(currentVideo);
+        setVideoError(false);
+        if (videoUrl) URL.revokeObjectURL(videoUrl); // 释放旧的 URL 防止内存泄漏
+        
+        if (currentVideo.videoFile) {
+          const newUrl = URL.createObjectURL(currentVideo.videoFile);
+          setVideoUrl(newUrl);
+        } else {
+          setVideoUrl('');
+        }
+      }, [currentVideo]);
+
+      // 修复拖动进度条卡住：增加防抖机制，限制 seek 频率
+      const handleSeeking = () => {
+        if (seekTimeoutRef.current) {
+          clearTimeout(seekTimeoutRef.current);
+        }
+        // 200ms 防抖，避免在拖动时频繁触发解码
+        seekTimeoutRef.current = setTimeout(() => {
+          // 此时拖动结束，浏览器已经处理了 currentTime 的变化
+          seekTimeoutRef.current = null;
+        }, 200);
+      };
+
+      const handleLike = () => {
+        const newLikes = localVideo.likes + 1;
+        const updatedVideo = { ...localVideo, likes: newLikes };
+        setLocalVideo(updatedVideo);
+        onUpdateVideo(updatedVideo);
+        onLike();
+      };
+
+      const handleCommentSubmit = (e) => {
+        e.preventDefault();
+        if (inputValue.trim()) {
+          const newComment = { author: '我', text: inputValue };
+          const updatedComments = [...localVideo.comments, newComment];
+          const updatedVideo = { ...localVideo, comments: updatedComments };
+          setLocalVideo(updatedVideo);
+          setInputValue('');
+          onUpdateVideo(updatedVideo);
+          onComment();
+        }
+      };
+
+      const handleInfoChange = (field, value) => {
+        const updatedVideo = { ...localVideo, [field]: value };
+        setLocalVideo(updatedVideo);
+        onUpdateVideo(updatedVideo);
+      };
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-[#252525] rounded-xl p-4">
+            <div className="video-container">
+              {localVideo.videoFile && videoUrl ? (
+                <>
+                  <video 
+                    ref={videoRef}
+                    controls 
+                    preload="auto" // 改为预加载，不再自动播放，减轻初始化压力
+                    onSeeking={handleSeeking} // 监听拖动事件
+                    onError={() => setVideoError(true)}
+                  >
+                    <source src={videoUrl} type="video/mp4" />
+                    您的浏览器不支持 video 标签。
+                  </video>
+                  {videoError && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 text-center">
+                      <IconAlertCircle size={48} color="#ef4444" />
+                      <p className="mt-2 font-bold">视频无法播放</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-800 text-gray-400">
+                  <IconAlertCircle size={48} />
+                  <p className="mt-2">未找到视频文件</p>
+                  {localVideo.isUploaded && (
+                    <button 
+                      onClick={() => onReupload(localVideo.id)}
+                      className="mt-4 flex items-center gap-2 bg-[#4CAF50] hover:bg-[#388E3C] text-white px-4 py-2 rounded-full text-sm transition-colors"
+                    >
+                      重新选择本地文件
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {isDevMode ? (
+              <div className="mt-4 space-y-2">
+                <input 
+                  value={localVideo.title}
+                  onChange={(e) => handleInfoChange('title', e.target.value)}
+                  className="w-full bg-gray-800 text-white text-xl font-bold p-2 rounded border border-[#4CAF50] focus:outline-none"
+                />
+                <div className="flex items-center justify-between text-sm text-gray-400">
+                  <input 
+                    value={localVideo.author}
+                    onChange={(e) => handleInfoChange('author', e.target.value)}
+                    className="bg-gray-800 text-gray-400 p-1 rounded border border-gray-600 focus:outline-none w-1/3"
+                  />
+                  <input 
+                    value={localVideo.views}
+                    onChange={(e) => handleInfoChange('views', e.target.value)}
+                    className="bg-gray-800 text-gray-400 p-1 rounded border border-gray-600 focus:outline-none w-1/4 text-right"
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-white text-xl font-bold mt-4">{localVideo.title}</h2>
+                <div className="flex items-center justify-between mt-2 text-sm text-gray-400">
+                  <span>发布者: {localVideo.author}</span>
+                  <span>观看次数: {localVideo.views}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-[#252525] rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <button onClick={handleLike} className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
+                <IconHeart size={24} color="#999" />
+                <span>{localVideo.likes}</span>
+              </button>
+              <button className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
+                <IconMessageCircle size={24} />
+                <span>{localVideo.comments.length}</span>
+              </button>
+              <button className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
+                <IconShare size={24} />
+                <span>分享</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-[#252525] rounded-xl p-4">
+            <h3 className="text-white font-bold mb-4">评论 ({localVideo.comments.length})</h3>
+            <form onSubmit={handleCommentSubmit} className="flex gap-2 mb-4">
+              <input type="text" placeholder="说点什么..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="flex-1 bg-gray-800 text-white rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#4CAF50]" />
+              <button type="submit" className="bg-[#4CAF50] hover:bg-[#388E3C] text-white px-6 py-2 rounded-full font-medium transition-colors">发送</button>
+            </form>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {localVideo.comments.map((comment, idx) => (
+                <div key={idx} className="flex gap-3 items-start">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4CAF50] to-[#2E7D32] flex items-center justify-center text-xs font-bold shrink-0">
+                    {comment.author[0]}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-white">{comment.author}</div>
+                    <div className="text-sm text-gray-300">{comment.text}</div>
+                  </div>
+                  {isDevMode && (
+                    <button onClick={() => onDeleteComment(idx)} className="p-1 hover:bg-gray-700 rounded transition-colors" title="删除评论">
+                      <IconTrash size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const VideoApp = () => {
+      const [videoList, setVideoList] = useState([]);
+      const [currentVideo, setCurrentVideo] = useState(null);
+      const [isDevMode, setIsDevMode] = useState(false);
+      const [isMenuOpen, setIsMenuOpen] = useState(false);
+      const [showAddVideo, setShowAddVideo] = useState(false);
+      const [manageList, setManageList] = useState(false);
+
+      useEffect(() => {
+        const loadVideos = async () => {
+          await initVideoData(); // 初始化数据库和默认数据
+          const videos = await getAllVideosFromDB();
+          setVideoList(videos);
+          if (videos.length > 0) setCurrentVideo(videos[0]);
+        };
+        loadVideos();
+      }, []);
+
+      const handleVideoClick = (video) => {
+        setCurrentVideo(video);
+      };
+
+      const handleUpdateVideo = (updatedVideo) => {
+        const updatedList = videoList.map(v => v.id === updatedVideo.id ? updatedVideo : v);
+        setVideoList(updatedList);
+        if (currentVideo.id === updatedVideo.id) setCurrentVideo(updatedVideo);
+      };
+
+      const handleDeleteComment = (commentIndex) => {
+        if (!currentVideo) return;
+        const newComments = [...currentVideo.comments];
+        newComments.splice(commentIndex, 1);
+        const updatedVideo = { ...currentVideo, comments: newComments };
+        handleUpdateVideo(updatedVideo);
+      };
+
+      const handleGlobalLike = () => {};
+      const handleGlobalComment = () => {};
+
+      const toggleDevMode = () => {
+        setIsDevMode(!isDevMode);
+        setIsMenuOpen(false);
+        if (!isDevMode) {
+          setShowAddVideo(false);
+          setManageList(false);
+        }
+      };
+
+      const handleFileUploaded = async (file) => {
+        const newId = Math.max(...videoList.map(v => v.id), 0) + 1;
+        const newVideo = {
+          id: newId,
+          title: file.name.replace(/\.[^/.]+$/, ""),
+          author: '我',
+          views: '0',
+          likes: 0,
+          isUploaded: true,
+          videoFile: file, // 直接将文件对象存入，稍后会存入DB
+          comments: []
+        };
+        
+        // 先将视频信息和文件存入数据库
+        await saveVideoToDB(newVideo);
+        
+        // 更新本地状态
+        const updatedList = [newVideo, ...videoList];
+        setVideoList(updatedList);
+        setCurrentVideo(newVideo);
+        setShowAddVideo(false);
+      };
+
+      const handleCancelAdd = () => {
+        setShowAddVideo(false);
+      };
+
+      const handleDeleteFromList = async (id) => {
+        await deleteVideoFromDB(id);
+        const updatedList = videoList.filter(v => v.id !== id);
+        setVideoList(updatedList);
+
+        if (currentVideo && currentVideo.id === id) {
+          if (updatedList.length > 0) {
+            setCurrentVideo(updatedList[0]);
+          } else {
+            setCurrentVideo(null);
+          }
+        }
+      };
+
+      const handleReupload = (id) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'video/*';
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            // 获取当前视频信息，替换其中的文件和进度
+            let videoData = await getVideoFromDB(id);
+            if (!videoData) {
+              console.error('视频数据不存在');
+              return;
+            }
+            videoData.videoFile = file;
+            await saveVideoToDB(videoData);
+
+            // 更新UI状态
+            const updatedList = videoList.map(v => v.id === id ? videoData : v);
+            setVideoList(updatedList);
+            if (currentVideo && currentVideo.id === id) {
+              setCurrentVideo(videoData);
+            }
+          }
+        };
+        input.click();
+      };
+
+      if (videoList.length === 0) return <div className="text-center text-gray-500 p-10">加载中...</div>;
+
+      return (
+        <div className="min-h-screen bg-[#1a1a1a] text-white">
+          <header className="fixed top-0 left-0 right-0 h-16 bg-[#222222] border-b border-gray-700 flex items-center px-6 z-20">
+            <div className="flex items-center gap-3">
+              <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
+                <rect width="48" height="48" rx="10" fill="#4CAF50" />
+                <path d="M14 34V14l10 10 10-10v20" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <circle cx="24" cy="20" r="3" fill="#FFF" />
+              </svg>
+              <span className="text-xl font-bold hidden sm:block">森空岛</span>
+            </div>
+            <div className="ml-auto flex items-center gap-4">
+              <span className="text-sm text-gray-400 hidden sm:block">当前地点: 江苏省 苏州市</span>
+              
+              <div className="relative">
+                <button 
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                </button>
+                
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-[#2a2a2a] border border-gray-600 rounded-lg shadow-lg z-30">
+                    <ul className="py-1">
+                      <li>
+                        <button
+                          onClick={toggleDevMode}
+                          className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#388E3C] transition-colors ${
+                            isDevMode ? 'text-green-400 font-medium' : 'text-gray-300'
+                          }`}
+                        >
+                          {isDevMode ? '退出开发者模式' : '开发者模式'}
+                        </button>
+                      </li>
+                      {isDevMode && (
+                        <>
+                          <li>
+                            <button
+                              onClick={() => { setShowAddVideo(true); setIsMenuOpen(false); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#388E3C] transition-colors"
+                            >
+                              添加新视频
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              onClick={() => { setManageList(!manageList); setIsMenuOpen(false); }}
+                              className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#388E3C] transition-colors ${
+                                manageList ? 'text-green-400 font-medium' : 'text-gray-300'
+                              }`}
+                            >
+                              {manageList ? '完成管理' : '管理推荐列表'}
+                            </button>
+                          </li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="flex max-w-[1200px] mx-auto pt-20 px-4 lg:px-6 pb-8">
+            <aside className="w-[280px] shrink-0 bg-[#252525] border-r border-gray-700 rounded-xl p-4 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto mr-4">
+              <h2 className="text-lg font-bold text-gray-300 mb-4">视频推荐</h2>
+              
+              {showAddVideo && isDevMode && (
+                <div className="mb-4">
+                  <DragAndDropUpload onFileUploaded={handleFileUploaded} onCancel={handleCancelAdd} />
+                </div>
+              )}
+
+              {videoList.map(video => (
+                <VideoListItem 
+                  key={video.id} 
+                  video={video} 
+                  onClick={handleVideoClick} 
+                  active={currentVideo?.id === video.id}
+                  isDevMode={isDevMode && manageList}
+                  onDelete={handleDeleteFromList}
+                />
+              ))}
+            </aside>
+
+            <main className="flex-1 min-w-0">
+              {currentVideo && (
+                <VideoPlayer 
+                  currentVideo={currentVideo} 
+                  onLike={handleGlobalLike}
+                  onComment={handleGlobalComment}
+                  isDevMode={isDevMode}
+                  onUpdateVideo={handleUpdateVideo}
+                  onDeleteComment={handleDeleteComment}
+                  onReupload={handleReupload}
+                />
+              )}
+              {!currentVideo && <div className="text-center text-gray-500">请选择一个视频进行播放</div>}
+            </main>
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<VideoApp />);
+  </script>
+</body>
+</html>

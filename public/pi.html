@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>森空岛 - 通知中心</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            green: {
+              50: '#E8F5E9', 100: '#C8E6C9', 200: '#A5D6A7',
+              300: '#81C784', 400: '#66BB6A', 500: '#4CAF50',
+              600: '#43A047', 700: '#388E3C', 800: '#2E7D32', 999: '#1B5E20',
+            },
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #1a1a1a; color: #fff; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+    .drag-active { border-color: #4CAF50 !important; background-color: rgba(76, 175, 80, 0.1) !important; }
+    .image-container { 
+      width: 100%; 
+      height: 400px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      background: #000; 
+      border-radius: 12px; 
+      overflow: hidden;
+    }
+    .image-container img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // ====================== IndexedDB 数据库操作 ======================
+    const DB_NAME = 'KuroDynamicDB';
+    const STORE_NAME = 'dynamics';
+    const DB_VERSION = 1;
+
+    const initDB = () => {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const saveDynamicToDB = async (data) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put(data);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const getAllDynamicsFromDB = async () => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    const deleteDynamicFromDB = async (id) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = (e) => reject(e.target.error);
+      });
+    };
+
+    // 将 File 对象转换为 Base64 字符串 (解决刷新后图片/动图黑屏消失的核心)
+    const fileToBase64 = (file) => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (error) => reject(error);
+      });
+    };
+
+    // ====================== 数据初始化 ======================
+    const initDynamicData = async () => {
+      const dynamics = await getAllDynamicsFromDB();
+      if (dynamics.length === 0) {
+        const defaultData = [
+          {
+            id: 1,
+            title: '【同人图】今天的罗德岛也是和平的一天',
+            author: '画师阿米娅',
+            likes: 2340,
+            imageBase64: 'https://via.placeholder.com/800x400/2E7D32/FFFFFF?text=Arknights+Fanart',
+            isUploaded: false,
+            comments: [
+              { author: '博士', text: '画得太好了！' },
+              { author: '凯尔希', text: '记得按时休息。' }
+            ]
+          },
+          {
+            id: 2,
+            title: '库洛游戏最新发布会现场返图',
+            author: '前线记者',
+            likes: 1580,
+            imageBase64: 'https://via.placeholder.com/800x400/1B5E20/FFFFFF?text=Kuro+Games+Event',
+            isUploaded: false,
+            comments: [
+              { author: '漂泊者', text: '期待新作品！' }
+            ]
+          }
+        ];
+        for (const item of defaultData) {
+          await saveDynamicToDB(item);
+        }
+      }
+    };
+
+    // ====================== ICONS ======================
+    const IconHeart = ({ size = 20, color = '#999', filled = false }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
+    );
+    const IconMessageCircle = ({ size = 20, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+    );
+    const IconShare = ({ size = 20, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
+    );
+    const IconTrash = ({ size = 16, color = '#ef4444' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+    );
+    const IconUpload = ({ size = 24, color = '#999' }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+    );
+
+    // ====================== 组件部分 ======================
+    
+    // 拖拽上传组件
+    const DragAndDropUpload = ({ onFileUploaded, onCancel }) => {
+      const [isDragging, setIsDragging] = useState(false);
+      const handleDragEnter = (e) => { e.preventDefault(); setIsDragging(true); };
+      const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
+      const handleDragOver = (e) => { e.preventDefault(); };
+      
+      const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          const file = files[0];
+          if (file.type.includes('image')) {
+            onFileUploaded(file);
+          } else {
+            alert('请拖入有效的图片文件！');
+          }
+        }
+      };
+
+      return (
+        <div 
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${isDragging ? 'drag-active border-[#4CAF50]' : 'border-gray-600 bg-[#252525]'}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <IconUpload size={40} color={isDragging ? '#4CAF50' : '#666'} />
+            <p className="text-white font-medium">{isDragging ? '松开鼠标即可上传' : '拖拽图片文件到这里'}</p>
+            <p className="text-xs text-gray-500">支持 JPG, PNG, GIF, WEBP 格式</p>
+            <button onClick={onCancel} className="mt-2 text-sm text-gray-400 hover:text-white underline">取消</button>
+          </div>
+        </div>
+      );
+    };
+
+    // 动态列表项
+    const DynamicListItem = ({ item, onClick, active, isDevMode, onDelete }) => {
+      return (
+        <div className={`flex items-center gap-3 p-3 mb-2 rounded-lg transition-all duration-200 group ${active ? 'bg-[#2E7D32] text-white' : 'bg-[#252525] text-gray-300 hover:text-white'}`}>
+          <div onClick={() => onClick(item)} className="flex-1 cursor-pointer min-w-0">
+            <h3 className="text-sm font-medium leading-tight line-clamp-2">{item.title}</h3>
+            <p className="text-xs text-gray-500 mt-1">{item.author}</p>
+          </div>
+          {isDevMode && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
+              className="p-2 hover:bg-gray-700 rounded transition-colors shrink-0"
+              title="删除通知"
+            >
+              <IconTrash size={16} color="#ef4444" />
+            </button>
+          )}
+        </div>
+      );
+    };
+
+    // 动态详情查看器
+    const DynamicViewer = ({ currentItem, onLike, onComment, isDevMode, onUpdateItem, onDeleteComment, onReupload }) => {
+      const [localItem, setLocalItem] = useState(currentItem);
+      const [inputValue, setInputValue] = useState('');
+      const likeTimeoutRef = useRef(null);
+
+      // 同步 currentItem 的变化
+      useEffect(() => {
+        setLocalItem(currentItem);
+      }, [currentItem]);
+
+      const handleLike = () => {
+        if (likeTimeoutRef.current) return;
+        const newLikes = localItem.likes + 1;
+        const updatedItem = { ...localItem, likes: newLikes };
+        
+        setLocalItem(updatedItem);
+        onUpdateItem(updatedItem); // 触发父组件更新数据库
+        onLike();
+        
+        likeTimeoutRef.current = setTimeout(() => {
+          likeTimeoutRef.current = null;
+        }, 500);
+      };
+
+      const handleCommentSubmit = (e) => {
+        e.preventDefault();
+        if (inputValue.trim()) {
+          const newComment = { author: '我', text: inputValue };
+          const updatedComments = [...localItem.comments, newComment];
+          const updatedItem = { ...localItem, comments: updatedComments };
+          
+          setLocalItem(updatedItem);
+          setInputValue('');
+          onUpdateItem(updatedItem); // 触发父组件更新数据库
+          onComment();
+        }
+      };
+
+      const handleInfoChange = (field, value) => {
+        const updatedItem = { ...localItem, [field]: value };
+        setLocalItem(updatedItem);
+        onUpdateItem(updatedItem);
+      };
+
+      if (!localItem) return null;
+
+      return (
+        <div className="space-y-4">
+          <div className="bg-[#252525] rounded-xl p-4">
+            <div className="image-container">
+              {localItem.imageBase64 ? (
+                <img src={localItem.imageBase64} alt="大图" />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-gray-500">
+                  <p className="mt-2">暂无图片</p>
+                  {localItem.isUploaded && (
+                    <button 
+                      onClick={() => onReupload(localItem.id)}
+                      className="mt-4 flex items-center gap-2 bg-[#4CAF50] hover:bg-[#388E3C] text-white px-4 py-2 rounded-full text-sm transition-colors"
+                    >
+                      重新选择本地图片
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {isDevMode ? (
+              <div className="mt-4 space-y-2">
+                <input 
+                  value={localItem.title}
+                  onChange={(e) => handleInfoChange('title', e.target.value)}
+                  className="w-full bg-gray-800 text-white text-xl font-bold p-2 rounded border border-[#4CAF50] focus:outline-none"
+                />
+                <input 
+                  value={localItem.author}
+                  onChange={(e) => handleInfoChange('author', e.target.value)}
+                  className="bg-gray-800 text-gray-400 p-1 rounded border border-gray-600 focus:outline-none w-1/3"
+                />
+              </div>
+            ) : (
+              <>
+                <h2 className="text-white text-xl font-bold mt-4">{localItem.title}</h2>
+                <div className="flex items-center justify-between mt-2 text-sm text-gray-400">
+                  <span>发布者: {localItem.author}</span>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-[#252525] rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <button onClick={handleLike} className="flex items-center gap-2 transition-colors hover:text-white" style={{ color: localItem.likes > 0 ? '#4CAF50' : '#999' }}>
+                <IconHeart size={24} color={localItem.likes > 0 ? '#4CAF50' : '#999'} filled={localItem.likes > 0} />
+                <span>{localItem.likes}</span>
+              </button>
+              <div className="flex items-center gap-2 text-gray-300">
+                <IconMessageCircle size={24} />
+                <span>{localItem.comments.length}</span>
+              </div>
+              <button className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
+                <IconShare size={24} />
+                <span>分享</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-[#252525] rounded-xl p-4">
+            <h3 className="text-white font-bold mb-4">评论 ({localItem.comments.length})</h3>
+            <form onSubmit={handleCommentSubmit} className="flex gap-2 mb-4">
+              <input type="text" placeholder="说点什么..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} className="flex-1 bg-gray-800 text-white rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#4CAF50]" />
+              <button type="submit" className="bg-[#4CAF50] hover:bg-[#388E3C] text-white px-6 py-2 rounded-full font-medium transition-colors">发送</button>
+            </form>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {localItem.comments.map((comment, idx) => (
+                <div key={idx} className="flex gap-3 items-start">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#4CAF50] to-[#2E7D32] flex items-center justify-center text-xs font-bold shrink-0">
+                    {comment.author[0]}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-white">{comment.author}</div>
+                    <div className="text-sm text-gray-300">{comment.text}</div>
+                  </div>
+                  {isDevMode && (
+                    <button onClick={() => onDeleteComment(idx)} className="p-1 hover:bg-gray-700 rounded transition-colors" title="删除评论">
+                      <IconTrash size={16} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // 主应用组件
+    const DynamicApp = () => {
+      const [dynamicList, setDynamicList] = useState([]);
+      const [currentItem, setCurrentItem] = useState(null);
+      const [isDevMode, setIsDevMode] = useState(false);
+      const [isMenuOpen, setIsMenuOpen] = useState(false);
+      const [showAddDynamic, setShowAddDynamic] = useState(false);
+      const [manageList, setManageList] = useState(false);
+      const [isLoading, setIsLoading] = useState(true);
+
+      useEffect(() => {
+        const loadDynamics = async () => {
+          try {
+            await initDynamicData();
+            const dynamics = await getAllDynamicsFromDB();
+            setDynamicList(dynamics);
+            if (dynamics.length > 0) setCurrentItem(dynamics[0]);
+          } catch (error) {
+            console.error("加载失败:", error);
+          } finally {
+            setIsLoading(false);
+          }
+        };
+        loadDynamics();
+      }, []);
+
+      const handleItemClick = (item) => {
+        setCurrentItem(item);
+      };
+
+      const handleUpdateItem = async (updatedItem) => {
+        try {
+          await saveDynamicToDB(updatedItem);
+          const updatedList = dynamicList.map(v => v.id === updatedItem.id ? updatedItem : v);
+          setDynamicList(updatedList);
+          if (currentItem && currentItem.id === updatedItem.id) {
+            setCurrentItem(updatedItem);
+          }
+        } catch (error) {
+          console.error("更新失败:", error);
+        }
+      };
+
+      const handleDeleteComment = (commentIndex) => {
+        if (!currentItem) return;
+        const newComments = [...currentItem.comments];
+        newComments.splice(commentIndex, 1);
+        const updatedItem = { ...currentItem, comments: newComments };
+        handleUpdateItem(updatedItem);
+      };
+
+      const handleGlobalLike = () => {};
+      const handleGlobalComment = () => {};
+
+      const toggleDevMode = () => {
+        setIsDevMode(!isDevMode);
+        setIsMenuOpen(false);
+        if (!isDevMode) {
+          setShowAddDynamic(false);
+          setManageList(false);
+        }
+      };
+
+      const handleFileUploaded = async (file) => {
+        try {
+          const base64String = await fileToBase64(file);
+          const newId = Math.max(...dynamicList.map(v => v.id), 0) + 1;
+          const newDynamic = {
+            id: newId,
+            title: file.name.replace(/\.[^/.]+$/, ""),
+            author: '我',
+            likes: 0,
+            isUploaded: true,
+            imageBase64: base64String, // 存储为base64字符串
+            comments: []
+          };
+          
+          await saveDynamicToDB(newDynamic);
+          
+          const updatedList = [newDynamic, ...dynamicList];
+          setDynamicList(updatedList);
+          setCurrentItem(newDynamic);
+          setShowAddDynamic(false);
+        } catch (error) {
+          console.error("上传图片失败:", error);
+          alert("图片上传失败，请重试！");
+        }
+      };
+
+      const handleCancelAdd = () => {
+        setShowAddDynamic(false);
+      };
+
+      const handleDeleteFromList = async (id) => {
+        try {
+          await deleteDynamicFromDB(id);
+          const updatedList = dynamicList.filter(v => v.id !== id);
+          setDynamicList(updatedList);
+
+          if (currentItem && currentItem.id === id) {
+            if (updatedList.length > 0) {
+              setCurrentItem(updatedList[0]);
+            } else {
+              setCurrentItem(null);
+            }
+          }
+        } catch (error) {
+          console.error("删除动态失败:", error);
+        }
+      };
+
+      const handleReupload = (id) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            try {
+              const base64String = await fileToBase64(file);
+              let dynamicData = dynamicList.find(item => item.id === id);
+              if (!dynamicData) {
+                console.error('动态数据不存在');
+                return;
+              }
+              dynamicData.imageBase64 = base64String;
+              
+              await saveDynamicToDB(dynamicData);
+
+              const updatedList = dynamicList.map(v => v.id === id ? dynamicData : v);
+              setDynamicList(updatedList);
+              if (currentItem && currentItem.id === id) {
+                setCurrentItem(dynamicData);
+              }
+            } catch (error) {
+              console.error("重新上传失败:", error);
+              alert("重新上传失败，请重试！");
+            }
+          }
+        };
+        input.click();
+      };
+
+      if (isLoading) return <div className="text-center text-gray-500 p-10">加载中...</div>;
+
+      return (
+        <div className="min-h-screen bg-[#1a1a1a] text-white">
+          <header className="fixed top-0 left-0 right-0 h-16 bg-[#222222] border-b border-gray-700 flex items-center px-6 z-20">
+            <div className="flex items-center gap-3">
+              <svg width="36" height="36" viewBox="0 0 48 48" fill="none">
+                <rect width="48" height="48" rx="10" fill="#4CAF50" />
+                <path d="M14 34V14l10 10 10-10v20" stroke="#FFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <circle cx="24" cy="20" r="3" fill="#FFF" />
+              </svg>
+              <span className="text-xl font-bold hidden sm:block">森空岛</span>
+            </div>
+            <div className="ml-auto flex items-center gap-4">
+              <span className="text-sm text-gray-400 hidden sm:block">当前地点: 江苏省 苏州市</span>
+              
+              <div className="relative">
+                <button 
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" /></svg>
+                </button>
+                
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-[#2a2a2a] border border-gray-600 rounded-lg shadow-lg z-30">
+                    <ul className="py-1">
+                      <li>
+                        <button
+                          onClick={toggleDevMode}
+                          className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#388E3C] transition-colors ${
+                            isDevMode ? 'text-green-400 font-medium' : 'text-gray-300'
+                          }`}
+                        >
+                          {isDevMode ? '退出开发者模式' : '开发者模式'}
+                        </button>
+                      </li>
+                      {isDevMode && (
+                        <>
+                          <li>
+                            <button
+                              onClick={() => { setShowAddDynamic(true); setIsMenuOpen(false); }}
+                              className="block w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#388E3C] transition-colors"
+                            >
+                              添加新动态
+                            </button>
+                          </li>
+                          <li>
+                            <button
+                              onClick={() => { setManageList(!manageList); setIsMenuOpen(false); }}
+                              className={`block w-full text-left px-4 py-2 text-sm hover:bg-[#388E3C] transition-colors ${
+                                manageList ? 'text-green-400 font-medium' : 'text-gray-300'
+                              }`}
+                            >
+                              {manageList ? '完成管理' : '管理推荐列表'}
+                            </button>
+                          </li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+
+          <div className="flex max-w-[1200px] mx-auto pt-20 px-4 lg:px-6 pb-8">
+            <aside className="w-[280px] shrink-0 bg-[#252525] border-r border-gray-700 rounded-xl p-4 sticky top-20 h-[calc(100vh-5rem)] overflow-y-auto mr-4">
+              <h2 className="text-lg font-bold text-gray-300 mb-4">通知</h2>
+              
+              {showAddDynamic && isDevMode && (
+                <div className="mb-4">
+                  <DragAndDropUpload onFileUploaded={handleFileUploaded} onCancel={handleCancelAdd} />
+                </div>
+              )}
+
+              {dynamicList.map(item => (
+                <DynamicListItem 
+                  key={item.id} 
+                  item={item} 
+                  onClick={handleItemClick} 
+                  active={currentItem?.id === item.id}
+                  isDevMode={isDevMode && manageList}
+                  onDelete={handleDeleteFromList}
+                />
+              ))}
+            </aside>
+
+            <main className="flex-1 min-w-0">
+              {currentItem && (
+                <DynamicViewer 
+                  currentItem={currentItem} 
+                  onLike={handleGlobalLike}
+                  onComment={handleGlobalComment}
+                  isDevMode={isDevMode}
+                  onUpdateItem={handleUpdateItem}
+                  onDeleteComment={handleDeleteComment}
+                  onReupload={handleReupload}
+                />
+              )}
+              {!currentItem && <div className="text-center text-gray-500">请选择一个通知进行查看</div>}
+            </main>
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<DynamicApp />);
+  </script>
+</body>
+</html>

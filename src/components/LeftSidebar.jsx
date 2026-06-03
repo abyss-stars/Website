@@ -1,5 +1,6 @@
 import { useAuth } from '../context/AuthContext';
-import { IconHome, IconStar } from './icons';
+// 1. 引入需要的图标，确保 IconVideo 已经存在
+import { IconHome, IconStar, IconVideo, IconMessageCircle } from './icons';
 
 // 预设话题列表
 const TOPICS = ['#明日方舟', '#泡姆泡姆', '#终末地', '#来自星尘', '#音律联觉'];
@@ -16,9 +17,15 @@ const TOPIC_COLORS = {
 export default function LeftSidebar({ activeTab, onTabChange, selectedTopic, onTopicChange, visible }) {
   const { isLoggedIn } = useAuth();
 
-  const tabs = [
+  // 2. 将按钮分为两组：原有 Tab 组 和 新外部链接组
+  const mainTabs = [
     { key: 'recommend', label: '推荐', Icon: IconHome, color: '#43A047', requiresAuth: false },
     { key: 'follow', label: '关注', Icon: IconStar, color: '#666', requiresAuth: true },
+  ];
+
+  const externalTabs = [
+    { key: 'video', label: '视频', Icon: IconVideo, color: '#666', link: '/vi.html' },
+    { key: 'dynamic', label: '通知', Icon: IconMessageCircle, color: '#666', link: '/pi.html' },
   ];
 
   const handleTopicClick = (topic) => {
@@ -33,6 +40,48 @@ export default function LeftSidebar({ activeTab, onTabChange, selectedTopic, onT
     onTopicChange(null);
   };
 
+  // 3. 提取公共的按钮渲染逻辑，避免代码重复
+  const renderTabButton = ({ key, label, Icon, color, requiresAuth, link }) => {
+    const isActive = activeTab === key;
+    const disabled = requiresAuth && !isLoggedIn;
+    
+    // 提取公共样式
+    const commonClasses = `flex items-center gap-3 px-3 py-2.5 border-l-4 text-sm rounded-r-md transition-all duration-200 text-left ${
+      isActive
+        ? 'border-[#4CAF50] bg-[#E8F5E9] dark:bg-[#1a3320] text-[#43A047] font-semibold'
+        : 'border-transparent text-[#666666] hover:bg-[#E5E0D5] dark:hover:bg-[#2a2a2a]'
+    } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`;
+
+    // 如果有 link 属性，则渲染为 <a> 标签并在新窗口打开
+    if (link) {
+      return (
+        <a
+          key={key}
+          href={link}
+          onClick={(e) => e.preventDefault() || window.open(link, '_blank', 'noopener,noreferrer')}
+          className={commonClasses}
+          title={label}
+        >
+          <Icon size={18} color={color} />
+          {label}
+        </a>
+      );
+    }
+
+    // 如果没有 link 属性，则渲染为 <button> 标签执行 Tab 切换
+    return (
+      <button
+        key={key}
+        onClick={() => !disabled && onTabChange(key)}
+        className={commonClasses}
+        title={disabled ? '登录后可查看关注内容' : label}
+      >
+        <Icon size={18} color={isActive ? '#43A047' : color} />
+        {label}
+      </button>
+    );
+  };
+
   return (
     <aside className={`${visible ? 'block' : 'hidden'} lg:block w-[200px] shrink-0 bg-white dark:bg-[#1E1E1E] border-r border-[#E5E0D5] dark:border-[#333] rounded-xl p-4 sticky top-[91px] h-[calc(100vh-106px)] overflow-y-auto`}>
       <div className="mb-4">
@@ -40,25 +89,16 @@ export default function LeftSidebar({ activeTab, onTabChange, selectedTopic, onT
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {tabs.map(({ key, label, Icon, color, requiresAuth }) => {
-          const isActive = activeTab === key;
-          const disabled = requiresAuth && !isLoggedIn;
-          return (
-            <button
-              key={key}
-              onClick={() => !disabled && onTabChange(key)}
-              className={`flex items-center gap-3 px-3 py-2.5 border-l-4 text-sm rounded-r-md transition-all duration-200 text-left ${
-                isActive
-                  ? 'border-[#4CAF50] bg-[#E8F5E9] dark:bg-[#1a3320] text-[#43A047] font-semibold'
-                  : 'border-transparent text-[#666666] hover:bg-[#E5E0D5] dark:hover:bg-[#2a2a2a]'
-              } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-              title={disabled ? '登录后可查看关注内容' : label}
-            >
-              <Icon size={18} color={isActive ? '#43A047' : color} />
-              {label}
-            </button>
-          );
-        })}
+        {/* 渲染原有的 Tab 按钮 */}
+        {mainTabs.map(renderTabButton)}
+      </nav>
+
+      {/* 4. 新增分隔区域 */}
+      <div className="my-4 border-t border-[#E5E0D5] dark:border-[#333]"></div>
+
+      <nav className="flex flex-col gap-0.5">
+        {/* 渲染新增的视频/动态按钮 */}
+        {externalTabs.map(renderTabButton)}
       </nav>
 
       {/* 话题筛选区域 */}
@@ -66,7 +106,7 @@ export default function LeftSidebar({ activeTab, onTabChange, selectedTopic, onT
         <div className="flex items-center justify-between mb-3 px-3">
           <h3 className="text-xs font-semibold text-[#999] uppercase tracking-wider flex items-center gap-1.5">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="text-[#999]">
-              <path d="M21.527 2.047a.5.5 0 0 1 .227.46L19.45 8.26a.5.5 0 0 1-.124.154l-3.445 2.336a.5.5 0 0 1-.577-.11l-2.162-2.577a.5.5 0 0 0-.498.006l-2.37 2.037a.5.5 0 0 1-.62-.38L5.65 5.5a.5.5 0 0 0-.58.12l-2.42 2.92a.5.5 0 1 1-.829-.624l1.892-2.28a.5.5 0 0 1 .71.29l1.943 2.318 2.07-1.78a.5.5 0 0 1 .67.067l1.803 2.155 3.182-2.127a.5.5 0 0 1 .588.12l2.29 3.23a.5.5 0 0 1-.047.63l-3.23 2.29a.5.5 0 0 1-.588.12l-2.148-1.803-1.98 1.338a.5.5 0 0 1-.666-.111l-1.803-2.155-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 1 1 .12-.588l2.155-1.803-1.338-1.98a.5.5 0 0 1 .111-.666l2.155-1.803-2.155-1.803a.5.5 0 0 1-.111-.666l1.803-2.155-2.29-3.23a.5.5 0 1 1 .588-.12l2.148 1.803 1.98-1.338a.5.5 0 0 1 .666.111l1.803 2.155 2.29-3.23a.5.5 0 0 1 .63-.047l3.23 2.29a.5.5 0 0 1 .047.63l-2.155 1.803 1.338 1.98a.5.5 0 0 1-.111.666l-2.155 1.803 2.155 1.803a.5.5 0 0 1 .12.588l-2.29 3.23 3.23 2.29a.5.5 0 0 1 .588.12l2.155-1.803-1.338-1.98a.5.5 0 0 1 .111-.666l1.803-2.155 1.338 1.98a.5.5 0 0 1-.047.63l-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 0 1-.12-.588l2.155-1.803-1.98-1.338a.5.5 0 0 1-.111-.666l1.803-2.155-1.338-1.98a.5.5 0 0 1 .047-.63l2.29-3.23a.5.5 0 0 1 .63-.047l3.23 2.29a.5.5 0 0 1 .047.63l-2.155 1.803 1.338 1.98a.5.5 0 0 1-.047.63l-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 0 1-.12-.588l2.155-1.803-1.98-1.338a.5.5 0 0 1-.111-.666l1.803-2.155-2.155-1.803a.5.5 0 0 1-.12-.588l2.29-3.23a.5.5 0 0 1 .588-.12l2.155 1.803 1.338-1.98a.5.5 0 0 1 .666.111l1.803 2.155 2.29-3.23a.5.5 0 0 1 .63-.047l3.23 2.29a.5.5 0 0 1 .047.63l-2.155 1.803 1.338 1.98a.5.5 0 0 1-.047.63l-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 0 1-.12-.588l2.155-1.803-1.98-1.338a.5.5 0 0 1-.111-.666l1.803-2.155z"/>
+              <path d="M21.527 2.047a.5.5 0 0 1 .227.46L19.45 8.26a.5.5 0 0 1-.124.154l-3.445 2.336a.5.5 0 0 1-.577-.11l-2.162-2.577a.5.5 0 0 0-.498.006l-2.37 2.037a.5.5 0 0 1-.62-.38L5.65 5.5a.5.5 0 0 0-.58.12l-2.42 2.92a.5.5 0 1 1-.829-.624l1.892-2.28a.5.5 0 0 1 .71.29l1.943 2.318 2.07-1.78a.5.5 0 0 1 .67.067l1.803 2.155 3.182-2.127a.5.5 0 0 1 .588.12l2.29 3.23a.5.5 0 0 1-.047.63l-3.23 2.29a.5.5 0 0 1-.588.12l-2.148-1.803-1.98 1.338a.5.5 0 0 1-.666-.111l-1.803-2.155-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 1 1 .12-.588l2.155-1.803-1.338-1.98a.5.5 0 0 1 .111-.666l2.155-1.803-2.155-1.803a.5.5 0 0 1-.111-.666l1.803-2.155-2.29-3.23a.5.5 0 1 1 .588-.12l2.148 1.803 1.98-1.338a.5.5 0 0 1 .666.111l1.803 2.155 2.29-3.23a.5.5 0 0 1 .63-.047l3.23 2.29a.5.5 0 0 1 .047.63l-2.155 1.803 1.338 1.98a.5.5 0 0 1-.111.666l-2.155 1.803 2.155 1.803a.5.5 0 0 1 .12.588l-2.29 3.23 3.23 2.29a.5.5 0 0 1 .588.12l2.155-1.803-1.338-1.98a.5.5 0 0 1 .111-.666l1.803-2.155 1.338 1.98a.5.5 0 0 1-.047.63l-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 0 1-.12-.588l2.155-1.803-1.98-1.338a.5.5 0 0 1-.111-.666l1.803-2.155-2.155-1.803a.5.5 0 0 1-.12-.588l2.29-3.23a.5.5 0 0 1 .588-.12l2.155 1.803 1.338-1.98a.5.5 0 0 1 .666.111l1.803 2.155 2.29-3.23a.5.5 0 0 1 .63-.047l3.23 2.29a.5.5 0 0 1 .047.63l-2.155 1.803 1.338 1.98a.5.5 0 0 1-.047.63l-2.29 3.23a.5.5 0 0 1-.63.047l-3.23-2.29a.5.5 0 0 1-.12-.588l2.155-1.803-1.98-1.338a.5.5 0 0 1-.111-.666l1.803-2.155z"/>
             </svg>
             话题筛选
           </h3>
