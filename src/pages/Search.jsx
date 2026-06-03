@@ -92,24 +92,61 @@ function SearchPostCard({ post, searchQuery }) {
 }
 
 // ====================== 主页面 ======================
+// 版区列表（display 用于下拉展示，gameKey 用于匹配 post.game 字段）
+const BOARDS = [
+  { name: '明日方舟', icon: '🔷', gameKey: '明日方舟' },
+  { name: '来自星尘', icon: '✨', gameKey: '来自星尘' },
+  { name: '终末地', icon: '🌌', gameKey: '终末地' },
+  { name: '泡姆泡姆', icon: '🎮', gameKey: '泡姆泡姆' },
+];
+
 export default function Search() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isLoggedIn } = useAuth();
   const navigate = useNavigate();
 
   const initialQuery = searchParams.get('q') || '';
+  const initialBoard = searchParams.get('board') || '';
   const [inputValue, setInputValue] = useState(initialQuery);
+  const [selectedBoard, setSelectedBoard] = useState(initialBoard);
   const [activeCategory, setActiveCategory] = useState('综合');
   const [sortBy, setSortBy] = useState('最热');
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [searchHistory, setSearchHistory] = useState(getSearchHistory);
 
+  // 版区参数变化时同步状态
+  useEffect(() => {
+    const b = searchParams.get('board') || '';
+    setSelectedBoard(b);
+  }, [searchParams]);
+
+  // 当前选中的版区对象
+  const currentBoard = BOARDS.find(b => b.gameKey === selectedBoard) || null;
+
   // 执行搜索
-  const doSearch = (query) => {
-    if (!query.trim()) return;
-    addSearchHistory(query.trim());
-    setSearchHistory(getSearchHistory());
-    setSearchParams({ q: query.trim() });
+  const doSearch = (query, board) => {
+    if (!query.trim() && !board) return;
+    const params = {};
+    if (query.trim()) {
+      params.q = query.trim();
+      addSearchHistory(query.trim());
+      setSearchHistory(getSearchHistory());
+    }
+    if (board) {
+      params.board = board;
+    }
+    setSearchParams(params);
+  };
+
+  // 切换版区
+  const handleBoardChange = (boardKey) => {
+    setCategoryOpen(false);
+    const newBoard = selectedBoard === boardKey ? '' : boardKey;
+    const params = {};
+    const q = searchParams.get('q') || inputValue;
+    if (q) params.q = q;
+    if (newBoard) params.board = newBoard;
+    setSearchParams(params);
   };
 
   // 自动搜索（URL 带 q 参数时）
@@ -122,17 +159,24 @@ export default function Search() {
   // 搜索逻辑
   const results = useMemo(() => {
     const query = (searchParams.get('q') || '').toLowerCase().trim();
-    if (!query) return [];
+    const board = searchParams.get('board') || '';
 
     let posts = getAllPosts();
 
-    // 文本搜索：内容、标签、作者名
-    posts = posts.filter(p =>
-      p.content.toLowerCase().includes(query) ||
-      (p.authorName || '').toLowerCase().includes(query) ||
-      (p.tags || []).some(t => t.toLowerCase().includes(query)) ||
-      (p.game || '').toLowerCase().includes(query)
-    );
+    // 版区筛选（优先执行，版区可以独立于关键词搜索）
+    if (board) {
+      posts = posts.filter(p => (p.game || '') === board || (p.game || '').toLowerCase() === board.toLowerCase());
+    }
+
+    // 文本搜索：内容、标签、作者名、游戏名
+    if (query) {
+      posts = posts.filter(p =>
+        p.content.toLowerCase().includes(query) ||
+        (p.authorName || '').toLowerCase().includes(query) ||
+        (p.tags || []).some(t => t.toLowerCase().includes(query)) ||
+        (p.game || '').toLowerCase().includes(query)
+      );
+    }
 
     // 分类过滤
     if (activeCategory === '攻略') {
@@ -140,7 +184,6 @@ export default function Search() {
     } else if (activeCategory === '话题') {
       posts = posts.filter(p => (p.tags || []).length > 0);
     } else if (activeCategory === '用户') {
-      // 用户分类：优先按作者名搜索
       posts = posts.filter(p => (p.authorName || '').toLowerCase().includes(query));
     }
 
@@ -148,12 +191,14 @@ export default function Search() {
     if (sortBy === '最新') {
       posts.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     } else {
-      // 最热：按点赞数
       posts.sort((a, b) => (b.likes || 0) - (a.likes || 0));
     }
 
     return posts;
   }, [searchParams, activeCategory, sortBy]);
+
+  // 是否有任何搜索条件（关键词或版区）
+  const hasAnyFilter = !!(searchParams.get('q') || searchParams.get('board'));
 
   const hotSearches = [
     { text: '焰狐龙梓兰', tag: 'HOT' },
@@ -168,7 +213,12 @@ export default function Search() {
   // 清除输入
   const handleClear = () => {
     setInputValue('');
-    setSearchParams({});
+    const board = searchParams.get('board');
+    if (board) {
+      setSearchParams({ board });
+    } else {
+      setSearchParams({});
+    }
   };
 
   return (
@@ -178,28 +228,56 @@ export default function Search() {
         <div className="flex-1 min-w-0">
           {/* 搜索栏 */}
           <div className="flex items-center gap-2 mb-4">
-            {/* 分类下拉 */}
+            {/* 版区分类下拉 */}
             <div className="relative" ref={categoryRef}>
               <button
                 onClick={() => setCategoryOpen(!categoryOpen)}
-                className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-[#252525] border border-[#E5E0D5] dark:border-[#374151] rounded-lg text-gray-700 dark:text-[#CCC] text-sm hover:border-[#4CAF50] transition-colors shrink-0"
+                className={`flex items-center gap-2 px-3 py-2 bg-white dark:bg-[#252525] border rounded-lg text-sm shrink-0 transition-colors ${
+                  currentBoard
+                    ? 'border-[#4CAF50] text-[#4CAF50]'
+                    : 'border-[#E5E0D5] dark:border-[#374151] text-gray-700 dark:text-[#CCC]'
+                } hover:border-[#4CAF50]`}
               >
-                <IconGrid size={16} color="#999" />
+                <IconGrid size={16} color={currentBoard ? '#4CAF50' : '#999'} />
+                {currentBoard && (
+                  <span className="hidden sm:inline">{currentBoard.icon} {currentBoard.name}</span>
+                )}
               </button>
               {categoryOpen && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setCategoryOpen(false)} />
                   <div className="absolute top-full left-0 mt-1 bg-white dark:bg-[#2a2a2a] border border-[#E5E0D5] dark:border-[#374151] rounded-md shadow-lg py-1 w-48 z-20">
-                    {[
-                      { name: '明日方舟', icon: '🔷' },
-                      { name: '来自星尘', icon: '✨' },
-                      { name: '明日方舟:终末地', icon: '🌌' },
-                      { name: '泡姆泡姆', icon: '🎮' },
-                    ].map(item => (
-                      <button key={item.name} onClick={() => setCategoryOpen(false)}
-                        className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#374151] transition-colors">
+                    {/* 全部版区 */}
+                    <button
+                      onClick={() => handleBoardChange('')}
+                      className={`flex items-center gap-3 w-full px-4 py-2 text-sm transition-colors ${
+                        !selectedBoard
+                          ? 'bg-[#E8F5E9] dark:bg-[#1a3320] text-[#4CAF50] font-medium'
+                          : 'text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#374151]'
+                      }`}>
+                      <span>📋</span>
+                      <span>全部版区</span>
+                      {!selectedBoard && (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="ml-auto">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                    {BOARDS.map(item => (
+                      <button key={item.gameKey}
+                        onClick={() => handleBoardChange(item.gameKey)}
+                        className={`flex items-center gap-3 w-full px-4 py-2 text-sm transition-colors ${
+                          selectedBoard === item.gameKey
+                            ? 'bg-[#E8F5E9] dark:bg-[#1a3320] text-[#4CAF50] font-medium'
+                            : 'text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-[#374151]'
+                        }`}>
                         <span>{item.icon}</span>
                         <span>{item.name}</span>
+                        {selectedBoard === item.gameKey && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="ml-auto">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -213,8 +291,13 @@ export default function Search() {
                 type="text"
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && doSearch(inputValue)}
-                placeholder="搜索帖子、用户、话题..."
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const board = searchParams.get('board') || '';
+                    doSearch(inputValue, board);
+                  }
+                }}
+                placeholder={currentBoard ? `搜索「${currentBoard.name}」版区内容...` : "搜索帖子、用户、话题..."}
                 className="flex-1 bg-transparent text-gray-800 dark:text-white text-sm outline-none placeholder-gray-400 dark:placeholder-gray-500"
               />
               {inputValue && (
@@ -224,7 +307,10 @@ export default function Search() {
                   </svg>
                 </button>
               )}
-              <button onClick={() => doSearch(inputValue)}
+              <button onClick={() => {
+                  const board = searchParams.get('board') || '';
+                  doSearch(inputValue, board);
+                }}
                 className="w-8 h-8 bg-[#4CAF50] rounded-full flex items-center justify-center hover:bg-[#388E3C] transition-colors shrink-0">
                 <IconSearch size={14} color="#FFF" />
               </button>
@@ -258,10 +344,10 @@ export default function Search() {
           </div>
 
           {/* 搜索结果 */}
-          {!searchParams.get('q') ? (
+          {!hasAnyFilter ? (
             <div className="text-center py-20 text-[#999]">
               <IconSearch size={40} color="#CCC" />
-              <p className="mt-4 text-sm">输入关键词搜索帖子、用户和话题</p>
+              <p className="mt-4 text-sm">输入关键词或选择版区开始探索</p>
             </div>
           ) : results.length === 0 ? (
             <div className="text-center py-20 text-[#999]">
@@ -271,6 +357,7 @@ export default function Search() {
           ) : (
             <>
               <div className="text-[#999] text-xs mb-4">
+                {currentBoard && <span>版区「{currentBoard.name}」 · </span>}
                 找到 {results.length} 条相关结果
               </div>
               {results.map(post => (
@@ -301,7 +388,7 @@ export default function Search() {
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {searchHistory.map((h, i) => (
-                      <button key={i} onClick={() => { setInputValue(h); doSearch(h); }}
+                      <button key={i} onClick={() => { setInputValue(h); doSearch(h, searchParams.get('board') || ''); }}
                         className="px-2.5 py-1 text-xs text-[#666] dark:text-[#999] bg-gray-100 dark:bg-[#333] rounded hover:bg-[#E8F5E9] dark:hover:bg-[#1a3320] hover:text-[#4CAF50] transition-colors">
                         {h}
                       </button>
@@ -315,7 +402,7 @@ export default function Search() {
                 <h4 className="text-gray-900 dark:text-white font-medium text-xs mb-2">热门搜索</h4>
                 <div className="space-y-2">
                   {hotSearches.map((item, i) => (
-                    <button key={i} onClick={() => { setInputValue(item.text); doSearch(item.text); }}
+                    <button key={i} onClick={() => { setInputValue(item.text); doSearch(item.text, searchParams.get('board') || ''); }}
                       className="flex items-center justify-between w-full px-2 py-1.5 text-xs text-[#666] dark:text-[#999] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] rounded transition-colors">
                       <div className="flex items-center gap-2">
                         <span className={`w-4 h-4 rounded text-[10px] leading-4 text-center font-bold ${

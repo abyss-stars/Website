@@ -271,9 +271,22 @@ export default function NavBar({ onMenuClick }) {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} />
               <div className="absolute top-full mt-1 left-0 bg-[#2a2a2a] dark:bg-[#2a2a2a] border border-[#374151] rounded-md shadow-lg py-1 w-40 z-20">
-                {['明日方舟', '来自星尘', '泡姆泡姆', '终末地'].map(item => (
-                  <button key={item} className="block w-full text-left px-4 py-2 text-sm text-white hover:bg-[#374151] transition-colors duration-150">
-                    {item}
+                <button
+                  onClick={() => { setDropdownOpen(false); navigate('/search'); }}
+                  className="block w-full text-left px-4 py-2 text-sm text-[#999] hover:bg-[#374151] hover:text-white transition-colors duration-150">
+                  全部版区
+                </button>
+                {[
+                  { name: '明日方舟', icon: '🔷' },
+                  { name: '来自星尘', icon: '✨' },
+                  { name: '泡姆泡姆', icon: '🎮' },
+                  { name: '终末地', icon: '🌌' },
+                ].map(item => (
+                  <button key={item.name}
+                    onClick={() => { setDropdownOpen(false); navigate(`/search?board=${encodeURIComponent(item.name)}`); }}
+                    className="flex items-center gap-2 w-full text-left px-4 py-2 text-sm text-white hover:bg-[#374151] transition-colors duration-150">
+                    <span>{item.icon}</span>
+                    <span>{item.name}</span>
                   </button>
                 ))}
               </div>
