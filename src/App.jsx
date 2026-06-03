@@ -16,6 +16,12 @@ import Video from './pages/Video';
 import PublishManager from './pages/PublishManager';
 import Article from './pages/Article';
 import CalendarPage from './pages/calendar';
+import OperatorBook from './pages/OperatorBook';
+import OperatorDetail from './pages/OperatorDetail';
+import Shop from './pages/Shop';
+import SignIn from './pages/SignIn';
+import Achievement from './pages/Achievement'
+import TeamFriend from './pages/TeamFriend'
 
 function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -43,6 +49,12 @@ function AppLayout() {
         <Route path="/publish-manager" element={<PublishManager />} />
         <Route path="/post/:postId" element={<Article />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/operatorbook" element={<OperatorBook/>}/>
+        <Route path="/operator/:id" element={<OperatorDetail/>}/> 
+        <Route path="/shop" element={<Shop />} />
+        <Route path="/signin" element={<SignIn />} />
+        <Route path="/achievement" element={<Achievement/>}/>
+        <Route path="/team" element={<TeamFriend/>}/>
       </Routes>
 
       {/* Mobile toolbar trigger FAB */}
