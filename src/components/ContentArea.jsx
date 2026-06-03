@@ -6,7 +6,7 @@ import PostItem from './PostItem';
 
 const BATCH_SIZE = 5;
 
-export default function ContentArea({ activeTab }) {
+export default function ContentArea({ activeTab, selectedTopic }) {
   const { currentUser } = useAuth();
   const [allPosts, setAllPosts] = useState([]);
   const [displayCount, setDisplayCount] = useState(BATCH_SIZE);
@@ -24,9 +24,17 @@ export default function ContentArea({ activeTab }) {
       all = all.filter(post => followings.includes(post.authorId));
     }
 
+    // 话题筛选：按左侧边栏选中的话题过滤
+    if (selectedTopic) {
+      all = all.filter(post => {
+        const postTags = (post.tags || []).map(t => t.toLowerCase());
+        return postTags.includes(selectedTopic.toLowerCase());
+      });
+    }
+
     setAllPosts(all);
     setDisplayCount(BATCH_SIZE);
-  }, [activeTab, currentUser]);
+  }, [activeTab, currentUser, selectedTopic]);
 
   useEffect(() => {
     loadPosts();
@@ -84,8 +92,12 @@ export default function ContentArea({ activeTab }) {
 
       {allPosts.length === 0 ? (
         <div className="text-center py-12 text-[#666]">
-          <p className="text-lg mb-2">暂无帖子</p>
-          <p className="text-sm">成为第一个发帖的人吧！</p>
+          <p className="text-lg mb-2">
+            {selectedTopic ? '没有匹配的帖子' : '暂无帖子'}
+          </p>
+          <p className="text-sm">
+            {selectedTopic ? '该话题下暂无内容' : '成为第一个发帖的人吧！'}
+          </p>
         </div>
       ) : (
         <>
