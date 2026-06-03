@@ -15,7 +15,6 @@ import Gallery from './pages/Gallery';
 import Video from './pages/Video';
 import PublishManager from './pages/PublishManager';
 import Article from './pages/Article';
-import EventCalendar from '../../web/src/pages/EventCalendar';
 import CalendarPage from './pages/calendar';
 
 function AppLayout() {
