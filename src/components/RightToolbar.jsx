@@ -56,6 +56,21 @@ export default function RightToolbar({ visible, onClose }) {
     if(tool === '活动日历'){
       navigate('/calendar')
     }
+    if (tool === '干员图鉴') {
+      navigate('/OperatorBook');
+    }
+    if (tool === '周边商城') {
+      navigate('/shop');
+    }
+    if (tool === '签到福利') {
+      navigate('/signin');
+    }
+     if (tool === '成就系统') {
+      navigate('/achievement');
+    }
+    if (tool === '好友组队') {
+      navigate('/team');
+    }
   };
 
   const tools = [

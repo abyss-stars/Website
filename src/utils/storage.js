@@ -595,6 +595,58 @@ function initSeedData() {
   setItem(STORAGE_KEYS.ALL_COMMENTS, {});
 }
 
+//===== 成就相关存储 =====
+//初始化/读取用户成就数据
+export function getAchieveData() {
+  const str = localStorage.getItem('userAchieve');
+  const defaultData = {
+    postCount: 0,    //发帖总数
+    signDays: 0,     //累计签到天数
+    unlockAch: []    //已解锁成就ID
+  }
+  return str ? JSON.parse(str) : defaultData;
+}
+
+//保存数据到本地
+export function setAchieveData(obj) {
+  localStorage.setItem('userAchieve', JSON.stringify(obj));
+}
+
+//发帖+1，自动校验成就
+export function addPostCount() {
+  let data = getAchieveData();
+  data.postCount += 1;
+  checkUnlock(data);
+  setAchieveData(data);
+}
+
+//签到+1，自动校验成就
+export function addSignDay() {
+  let data = getAchieveData();
+  data.signDays += 1;
+  checkUnlock(data);
+  setAchieveData(data);
+}
+
+//成就解锁规则
+function checkUnlock(data) {
+  const { postCount, signDays, unlockAch } = data;
+  //成就配置
+  const ruleList = [
+    { id:'post5', type:'post', num:5, name:'萌新博主' },
+    { id:'post20', type:'post', num:20, name:'人气创作者' },
+    { id:'sign7', type:'sign', num:7, name:'周常旅人' },
+    { id:'sign30', type:'sign', num:30, name:'月度常驻' },
+  ]
+  ruleList.forEach(item=>{
+    const currNum = item.type==='post' ? postCount : signDays;
+    if(currNum >= item.num && !unlockAch.includes(item.id)){
+      unlockAch.push(item.id);
+      setTimeout(()=>alert(`✅解锁成就：${item.name}`),100)
+    }
+  })
+}
+
 // 初始化 - 在模块加载时执行
 initSeedData();
 

@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { createPost, saveDraft, getUserDrafts, deleteDraft, schedulePost, getPostById, updatePost, getAllPosts } from '../utils/storage';
+import { createPost, saveDraft, getUserDrafts, deleteDraft, schedulePost, getPostById, updatePost, getAllPosts, addPostCount } from '../utils/storage';
 import { uploadFile, generateFilename } from '../utils/upload';
 import { IconSearch } from '../components/icons';
-
 // ====================== 工具栏图标 ======================
 const ToolbarIcon = ({ children, label, onClick, active }) => (
   <div className="relative group">
@@ -56,7 +55,7 @@ const IconItalic = () => (
   </svg>
 );
 const IconUnderline = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="16" height="16" viewBox="0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3" /><line x1="4" y1="21" x2="20" y2="21" />
   </svg>
 );
@@ -299,6 +298,12 @@ export default function Publish() {
       authorName: currentUser.nickname,
       authorAvatar: currentUser.avatar,
     });
+    
+    // ======================
+    // 发帖成功 → 同步成就系统
+    addPostCount();
+    // ======================
+    
     navigate('/');
   };
 
