@@ -10,6 +10,7 @@ export default function Home() {
   const { isLoggedIn, currentUser, refreshUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('recommend');
+  const [selectedTopic, setSelectedTopic] = useState(null);
   const [checkinResult, setCheckinResult] = useState(null);
 
   useEffect(() => {
@@ -27,7 +28,13 @@ export default function Home() {
   const handleTabChange = useCallback((tab) => {
     if (tab === 'follow' && !isLoggedIn) return;
     setActiveTab(tab);
+    // 切换 Tab 时重置话题筛选
+    setSelectedTopic(null);
   }, [isLoggedIn]);
+
+  const handleTopicChange = useCallback((topic) => {
+    setSelectedTopic(topic);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F5F0E6] dark:bg-[#1a1a1a]">
@@ -48,8 +55,13 @@ export default function Home() {
       )}
 
       <div className="flex max-w-[1200px] mx-auto">
-        <LeftSidebar activeTab={activeTab} onTabChange={handleTabChange} />
-        <ContentArea activeTab={activeTab} />
+        <LeftSidebar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          selectedTopic={selectedTopic}
+          onTopicChange={handleTopicChange}
+        />
+        <ContentArea activeTab={activeTab} selectedTopic={selectedTopic} />
         <RightToolbar />
       </div>
     </div>
